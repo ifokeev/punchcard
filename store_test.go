@@ -123,3 +123,23 @@ func TestListReturnsCopy(t *testing.T) {
 		t.Fatalf("want 2 tasks")
 	}
 }
+
+func TestSweepStuck(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	clk := fixedClock()
+	s.now = clk
+	task, _ := s.Create(TaskInput{Title: "t"})
+	s.Claim() // -> in_progress at an early timestamp
+	// advance the clock well past maxAge
+	for i := 0; i < 10000; i++ {
+		clk()
+	}
+	n := s.SweepStuck(time.Minute)
+	if n != 1 {
+		t.Fatalf("want 1 swept, got %d", n)
+	}
+	got, _ := s.Get(task.ID)
+	if got.Status != StatusFailed {
+		t.Fatalf("stuck task not failed: %v", got.Status)
+	}
+}

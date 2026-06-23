@@ -240,3 +240,36 @@ func (s *Store) Create(in TaskInput) (*Task, error) {
 	}
 	return t, nil
 }
+
+func (s *Store) SweepStuck(maxAge time.Duration) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	type snapshot struct {
+		status    Status
+		note      string
+		updatedAt time.Time
+	}
+	var swept []*Task
+	saved := map[string]snapshot{}
+	for _, t := range s.tasks {
+		if t.Status == StatusInProgress && now.Sub(t.UpdatedAt) > maxAge {
+			saved[t.ID] = snapshot{t.Status, t.Note, t.UpdatedAt}
+			t.Status = StatusFailed
+			t.Note = "auto-failed: stuck in_progress with no owning loop (reset with: punch update " + t.ID + " --status todo)"
+			t.UpdatedAt = now
+			swept = append(swept, t)
+		}
+	}
+	if len(swept) == 0 {
+		return 0
+	}
+	if err := s.save(); err != nil {
+		for _, t := range swept {
+			snap := saved[t.ID]
+			t.Status, t.Note, t.UpdatedAt = snap.status, snap.note, snap.updatedAt
+		}
+		return 0
+	}
+	return len(swept)
+}

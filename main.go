@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 )
 
 func main() {
@@ -154,7 +155,8 @@ func cmdGet(args []string) {
 	fmt.Println(string(body))
 }
 
-// sweepStuck is a temporary stub so this task builds before Task 9 lands; Task 9
-// replaces it with the real implementation. (Mirrors the Task 4 stub pattern.)
-// ponytail: stub now, real body in Task 9 — keeps each task's build green in order.
-func sweepStuck(s *Store) {}
+func sweepStuck(s *Store) {
+	if n := s.SweepStuck(30 * time.Minute); n > 0 {
+		log.Printf("startup sweep: flagged %d stuck in_progress task(s) as failed", n)
+	}
+}
