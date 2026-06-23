@@ -87,5 +87,4 @@ func newMux(s *Store, originBase string) *http.ServeMux {
 	return mux
 }
 
-func registerUploadRoutes(mux *http.ServeMux, s *Store, originBase string) {}
-func registerBoard(mux *http.ServeMux)                                      {}
+func registerBoard(mux *http.ServeMux) {}
