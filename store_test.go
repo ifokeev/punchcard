@@ -95,3 +95,31 @@ func TestClaimAtomicNoDoubleClaim(t *testing.T) {
 		t.Fatalf("claimed %d tasks, want 50", len(seen))
 	}
 }
+
+func TestPatchAndAttach(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.now = fixedClock()
+	task, _ := s.Create(TaskInput{Title: "t"})
+	rev := StatusInReview
+	pr := "https://github.com/x/y/pull/1"
+	got, err := s.Patch(task.ID, Patch{Status: &rev, PRURL: &pr})
+	if err != nil || got.Status != StatusInReview || got.PRURL != pr {
+		t.Fatalf("patch: %+v err=%v", got, err)
+	}
+	at, err := s.Attach(task.ID, "/artifacts/"+task.ID+"/demo.gif")
+	if err != nil || len(at.Artifacts) != 1 {
+		t.Fatalf("attach: %+v err=%v", at, err)
+	}
+	if _, err := s.Patch("nope", Patch{Status: &rev}); err == nil {
+		t.Fatalf("expected error patching missing task")
+	}
+}
+
+func TestListReturnsCopy(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.Create(TaskInput{Title: "a"})
+	s.Create(TaskInput{Title: "b"})
+	if len(s.List()) != 2 {
+		t.Fatalf("want 2 tasks")
+	}
+}

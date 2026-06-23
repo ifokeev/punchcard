@@ -160,6 +160,70 @@ func better(a, b *Task) bool {
 	return a.ID < b.ID
 }
 
+type Patch struct {
+	Status *Status
+	PRURL  *string
+	Branch *string
+	Note   *string
+}
+
+var errNotFound = fmt.Errorf("task not found")
+
+func (s *Store) Patch(id string, p Patch) (*Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return nil, errNotFound
+	}
+	old := Task{Status: t.Status, PRURL: t.PRURL, Branch: t.Branch, Note: t.Note, UpdatedAt: t.UpdatedAt}
+	if p.Status != nil {
+		t.Status = *p.Status
+	}
+	if p.PRURL != nil {
+		t.PRURL = *p.PRURL
+	}
+	if p.Branch != nil {
+		t.Branch = *p.Branch
+	}
+	if p.Note != nil {
+		t.Note = *p.Note
+	}
+	t.UpdatedAt = s.now()
+	if err := s.save(); err != nil {
+		t.Status, t.PRURL, t.Branch, t.Note, t.UpdatedAt = old.Status, old.PRURL, old.Branch, old.Note, old.UpdatedAt
+		return nil, err
+	}
+	return t, nil
+}
+
+func (s *Store) Attach(id, relURL string) (*Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return nil, errNotFound
+	}
+	t.Artifacts = append(t.Artifacts, relURL)
+	t.UpdatedAt = s.now()
+	if err := s.save(); err != nil {
+		t.Artifacts = t.Artifacts[:len(t.Artifacts)-1]
+		return nil, err
+	}
+	return t, nil
+}
+
+func (s *Store) List() []*Task {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*Task, 0, len(s.tasks))
+	for _, t := range s.tasks {
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool { return better(out[i], out[j]) })
+	return out
+}
+
 func (s *Store) Create(in TaskInput) (*Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
