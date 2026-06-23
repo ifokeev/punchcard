@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 )
@@ -73,6 +74,31 @@ func uploadFile(id, path string) (int, []byte, error) {
 	defer resp.Body.Close()
 	out, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, out, nil
+}
+
+// doDelete sends a DELETE request and returns the status code and body.
+func doDelete(path string) (int, []byte, error) {
+	req, err := authReq("DELETE", path, nil, "")
+	if err != nil {
+		return 0, nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, out, nil
+}
+
+// readStdin reads all of os.Stdin and returns it.
+func readStdin() ([]byte, error) {
+	return io.ReadAll(os.Stdin)
+}
+
+// urlEncode percent-encodes a query parameter value.
+func urlEncode(s string) string {
+	return url.QueryEscape(s)
 }
 
 func fail(format string, a ...any) {

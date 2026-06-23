@@ -8,4 +8,5 @@ docs/superpowers/
 
 # Runtime data (created by `punch serve`)
 /tasks.json
+/memory.json
 /artifacts/

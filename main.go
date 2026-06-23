@@ -6,12 +6,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("usage: punch <serve|add|next|update|attach|list|get> [flags]")
+		fmt.Println("usage: punch <serve|add|next|update|attach|list|get|memory> [flags]")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
@@ -29,6 +30,8 @@ func main() {
 		cmdList(os.Args[2:])
 	case "get":
 		cmdGet(os.Args[2:])
+	case "memory":
+		cmdMemory(os.Args[2:])
 	default:
 		fail("unknown command %q", os.Args[1])
 	}
@@ -39,6 +42,7 @@ func cmdServe(args []string) {
 	addr := fs.String("addr", "127.0.0.1:8080", "bind address")
 	token := fs.String("token", "", "bearer token (auth off if empty)")
 	store := fs.String("store", "tasks.json", "path to tasks.json")
+	memory := fs.String("memory", "memory.json", "path to memory.json")
 	originBase := fs.String("public-url", "", "public origin for absolute artifact URLs (optional)")
 	trustedProxy := fs.Bool("trusted-proxy", false, "honor X-Forwarded-* (only behind a trusted proxy)")
 	insecure := fs.Bool("insecure", false, "allow non-loopback bind without a token")
@@ -56,7 +60,12 @@ func cmdServe(args []string) {
 	}
 	sweepStuck(s) // Task 9: flag long-running in_progress on startup
 
-	var h http.Handler = newMux(s, *originBase)
+	ms, err := NewMemoryStore(*memory)
+	if err != nil {
+		fail("memory store: %v", err)
+	}
+
+	var h http.Handler = newMux(s, ms, *originBase)
 	h = proxyMiddleware(*trustedProxy)(h)
 	h = tokenMiddleware(*token)(h)
 	log.Printf("punchcard serving on %s (auth=%v)", *addr, *token != "")
@@ -153,6 +162,124 @@ func cmdGet(args []string) {
 		fail("get failed (%d): %v", code, err)
 	}
 	fmt.Println(string(body))
+}
+
+// cmdMemory dispatches memory subcommands: add, search, list, get, rm.
+func cmdMemory(args []string) {
+	if len(args) < 1 {
+		fail("usage: punch memory <add|search|list|get|rm> [flags]")
+	}
+	switch args[0] {
+	case "add":
+		cmdMemoryAdd(args[1:])
+	case "search":
+		cmdMemorySearch(args[1:])
+	case "list":
+		cmdMemoryList(args[1:])
+	case "get":
+		cmdMemoryGet(args[1:])
+	case "rm":
+		cmdMemoryRm(args[1:])
+	default:
+		fail("unknown memory subcommand %q", args[0])
+	}
+}
+
+func cmdMemoryAdd(args []string) {
+	fs := flag.NewFlagSet("memory add", flag.ExitOnError)
+	title := fs.String("title", "", "note title (required)")
+	body := fs.String("body", "", "note body (reads stdin if empty)")
+	repo := fs.String("repo", "", "repo path (optional)")
+	tags := fs.String("tags", "", "comma-separated tags (optional)")
+	fs.Parse(args)
+
+	if *title == "" {
+		fail("--title required")
+	}
+	noteBody := *body
+	if noteBody == "" {
+		data, err := readStdin()
+		if err != nil {
+			fail("reading stdin: %v", err)
+		}
+		noteBody = strings.TrimRight(string(data), "\n")
+	}
+	var tagList []string
+	if *tags != "" {
+		for _, t := range strings.Split(*tags, ",") {
+			t = strings.TrimSpace(t)
+			if t != "" {
+				tagList = append(tagList, t)
+			}
+		}
+	}
+	payload := map[string]any{
+		"title": *title,
+		"body":  noteBody,
+		"repo":  *repo,
+		"tags":  tagList,
+	}
+	code, respBody, err := doJSON("POST", "/api/memory", payload)
+	if err != nil || code != http.StatusCreated {
+		fail("memory add failed (%d): %s %v", code, respBody, err)
+	}
+	fmt.Println(string(respBody))
+}
+
+func cmdMemorySearch(args []string) {
+	fs := flag.NewFlagSet("memory search", flag.ExitOnError)
+	repo := fs.String("repo", "", "filter by repo (optional)")
+	fs.Parse(args)
+	rest := fs.Args()
+	if len(rest) < 1 {
+		fail("usage: punch memory search <query> [--repo ...]")
+	}
+	q := rest[0]
+	path := "/api/memory?q=" + urlEncode(q)
+	if *repo != "" {
+		path += "&repo=" + urlEncode(*repo)
+	}
+	code, body, err := doJSON("GET", path, nil)
+	if err != nil || code != http.StatusOK {
+		fail("memory search failed (%d): %v", code, err)
+	}
+	fmt.Println(string(body))
+}
+
+func cmdMemoryList(args []string) {
+	fs := flag.NewFlagSet("memory list", flag.ExitOnError)
+	repo := fs.String("repo", "", "filter by repo (optional)")
+	fs.Parse(args)
+	path := "/api/memory"
+	if *repo != "" {
+		path += "?repo=" + urlEncode(*repo)
+	}
+	code, body, err := doJSON("GET", path, nil)
+	if err != nil || code != http.StatusOK {
+		fail("memory list failed (%d): %v", code, err)
+	}
+	fmt.Println(string(body))
+}
+
+func cmdMemoryGet(args []string) {
+	if len(args) < 1 {
+		fail("usage: punch memory get <id>")
+	}
+	code, body, err := doJSON("GET", "/api/memory/"+args[0], nil)
+	if err != nil || code != http.StatusOK {
+		fail("memory get failed (%d): %v", code, err)
+	}
+	fmt.Println(string(body))
+}
+
+func cmdMemoryRm(args []string) {
+	if len(args) < 1 {
+		fail("usage: punch memory rm <id>")
+	}
+	code, body, err := doDelete("/api/memory/" + args[0])
+	if err != nil || code != http.StatusNoContent {
+		fail("memory rm failed (%d): %s %v", code, body, err)
+	}
 }
 
 func sweepStuck(s *Store) {

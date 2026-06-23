@@ -11,8 +11,10 @@ import (
 
 func newTestServer(t *testing.T) http.Handler {
 	t.Helper()
-	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
-	return newMux(s, "")
+	dir := t.TempDir()
+	s, _ := NewStore(filepath.Join(dir, "tasks.json"))
+	ms, _ := NewMemoryStore(filepath.Join(dir, "memory.json"))
+	return newMux(s, ms, "")
 }
 
 func TestCreateAndListViaAPI(t *testing.T) {
@@ -80,5 +82,65 @@ func TestPatchViaAPI(t *testing.T) {
 	json.Unmarshal(rec.Body.Bytes(), &got)
 	if got.Status != StatusDone || got.PRURL != "u" {
 		t.Fatalf("patch not applied: %+v", got)
+	}
+}
+
+func TestMemoryPostAndSearchViaAPI(t *testing.T) {
+	h := newTestServer(t)
+
+	// POST a note
+	noteBody, _ := json.Marshal(map[string]any{
+		"title": "Go atomic rename pattern",
+		"body":  "Use os.CreateTemp in same dir then os.Rename for atomic writes.",
+		"repo":  "/myrepo",
+		"tags":  []string{"go", "io"},
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/memory", bytes.NewReader(noteBody)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("POST /api/memory status=%d body=%s", rec.Code, rec.Body)
+	}
+	var created Note
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created note: %v", err)
+	}
+	if created.ID == "" {
+		t.Fatalf("no id returned for created note")
+	}
+
+	// Search by keyword in body
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/memory?q=atomic", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/memory?q=atomic status=%d", rec.Code)
+	}
+	var results []Note
+	json.Unmarshal(rec.Body.Bytes(), &results)
+	if len(results) != 1 {
+		t.Fatalf("want 1 search result, got %d", len(results))
+	}
+	if results[0].ID != created.ID {
+		t.Fatalf("wrong note returned: %+v", results[0])
+	}
+
+	// GET by id
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/memory/"+created.ID, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/memory/%s status=%d", created.ID, rec.Code)
+	}
+
+	// DELETE
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("DELETE", "/api/memory/"+created.ID, nil))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("DELETE /api/memory/%s status=%d", created.ID, rec.Code)
+	}
+
+	// 404 after delete
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/memory/"+created.ID, nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 after delete, got %d", rec.Code)
 	}
 }
