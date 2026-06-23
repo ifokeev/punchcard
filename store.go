@@ -124,6 +124,42 @@ func (s *Store) Get(id string) (*Task, bool) {
 	return t, ok
 }
 
+// Claim atomically selects and flips the next todo task to in_progress.
+func (s *Store) Claim() (*Task, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var best *Task
+	for _, t := range s.tasks {
+		if t.Status != StatusTodo {
+			continue
+		}
+		if best == nil || better(t, best) {
+			best = t
+		}
+	}
+	if best == nil {
+		return nil, false
+	}
+	best.Status = StatusInProgress
+	best.UpdatedAt = s.now()
+	if err := s.save(); err != nil {
+		best.Status = StatusTodo // roll back the flip on flush failure
+		return nil, false
+	}
+	return best, true
+}
+
+// better reports whether a should be claimed before b.
+func better(a, b *Task) bool {
+	if a.Priority != b.Priority {
+		return a.Priority > b.Priority
+	}
+	if !a.CreatedAt.Equal(b.CreatedAt) {
+		return a.CreatedAt.Before(b.CreatedAt)
+	}
+	return a.ID < b.ID
+}
+
 func (s *Store) Create(in TaskInput) (*Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

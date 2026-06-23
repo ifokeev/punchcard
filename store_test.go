@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -38,5 +39,59 @@ func TestStoreSaveLoadRoundtrip(t *testing.T) {
 	got, ok := s2.Get(task.ID)
 	if !ok || got.Title != "do x" {
 		t.Fatalf("reload mismatch: %+v ok=%v", got, ok)
+	}
+}
+
+func TestClaimOrdering(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.now = fixedClock()
+	low, _ := s.Create(TaskInput{Title: "low", Priority: 1})
+	high, _ := s.Create(TaskInput{Title: "high", Priority: 5})
+	_, _ = s.Create(TaskInput{Title: "mid", Priority: 1}) // same prio as low, later created
+
+	c1, ok := s.Claim()
+	if !ok || c1.ID != high.ID {
+		t.Fatalf("want high first, got %+v", c1)
+	}
+	if c1.Status != StatusInProgress {
+		t.Fatalf("claimed task not in_progress: %v", c1.Status)
+	}
+	c2, _ := s.Claim()
+	if c2.ID != low.ID { // FIFO within equal priority: low created before mid
+		t.Fatalf("want low (FIFO) second, got %+v", c2)
+	}
+}
+
+func TestClaimAtomicNoDoubleClaim(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	for i := 0; i < 50; i++ {
+		s.Create(TaskInput{Title: "t", Priority: 1})
+	}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	seen := map[string]int{}
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				task, ok := s.Claim()
+				if !ok {
+					return
+				}
+				mu.Lock()
+				seen[task.ID]++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	for id, n := range seen {
+		if n != 1 {
+			t.Fatalf("task %s claimed %d times (want 1)", id, n)
+		}
+	}
+	if len(seen) != 50 {
+		t.Fatalf("claimed %d tasks, want 50", len(seen))
 	}
 }
