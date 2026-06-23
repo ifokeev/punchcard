@@ -23,8 +23,9 @@ accumulates; the subagent does not).
 2. **Dispatch a fresh subagent** with the task brief + this contract. The subagent
    does steps 3–8 and returns ONE line: `id | branch | pr_url | proof_url | outcome`.
 
-3. **(subagent) Load context:** `cd <repo>`; read `memory/MEMORY.md` + notes tagged
-   global or this task's branch. Create a branch `punch/<id>-<slug>`.
+3. **(subagent) Load context:** `cd <repo>`; recall relevant notes with
+   `punch memory search "<topic/keywords>" --repo <repo>` and read the returned notes.
+   Create a branch `punch/<id>-<slug>`.
 
 4. **(subagent) Implement** to satisfy `acceptance`. Run the repo's tests. Commit.
 
@@ -56,26 +57,19 @@ in code/README/git, (4) actionable. Keepers: repo conventions (test/build/lint/d
 commands), gotchas, decisions + rationale, environment facts. Don't save: the task
 narrative, anything grep-able, secrets, transient state.
 
-- Notes live in `memory/` as markdown with frontmatter (`name`, `description`,
-  `created`, `updated`, optional `branch`, optional `superseded_by`) + `[[wikilinks]]`,
-  indexed in `MEMORY.md` as `- [Title](file.md) — hook`.
-- **Commit memory to the default branch, NOT the task feature branch** (the feature
-  branch dies with the unmerged PR — §15 drops "graduates on merge"). Do this as the
-  LAST step, after the PR is opened + pushed (working tree is clean), with explicit
-  git commands — do not improvise:
+- **Recall BEFORE a task:** `punch memory search "<topic/keywords>" --repo <repo>` and
+  read the returned notes — do this in step 3 alongside loading other context.
+- **Save at the `done` step:**
   ```bash
-  DEFAULT=$(git -C <repo> remote show origin | sed -n 's/.*HEAD branch: //p')
-  git -C <repo> checkout "$DEFAULT" && git -C <repo> pull --ff-only
-  # write/update the note under memory/ and add its line to MEMORY.md
-  git -C <repo> add memory/ && git -C <repo> commit -m "memory: <slug>"
-  git -C <repo> push origin "$DEFAULT"
+  punch memory add --title "<short descriptive title>" --repo <repo> \
+    --tags "<tag1,tag2>" --body "<the durable fact>"
   ```
-  The next task branches fresh from `$DEFAULT`, so it sees the note immediately. If
-  the push rejects (someone else pushed), `git pull --ff-only` and retry — notes are
-  append-only, so conflicts are rare and trivial.
-- Before writing, scan `MEMORY.md` and UPDATE an existing note instead of duplicating.
-- If a note proved wrong this task (names a file/flag that's gone), fix it: write the
-  corrected fact and mark the old one `superseded_by`, or delete it.
+  Memory lives on the punchcard server — no git commits needed, no files to manage.
+- Before adding, search first (`punch memory search`) and UPDATE/supersede instead of
+  duplicating. To supersede a stale note: save the corrected fact as a new note, then
+  `punch memory rm <old-id>` (or PATCH `superseded_by` on the old note via
+  `punch memory get <old-id>` to find it first).
+- If a note proved wrong this task, delete or supersede it.
 
 ## Recovery
 If a task is stuck `in_progress` from a dead prior run, reset it with
