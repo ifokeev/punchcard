@@ -12,20 +12,36 @@ Electron.
 Fast (local single binary, no cloud round-trips) and context-clean (each task runs in
 a fresh subagent, not one ballooning chat). No database, no framework — just Go stdlib.
 
-## Install
+## Install the binary
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ifokeev/punchcard/main/install.sh | sh
 punch serve                   # board + API on http://127.0.0.1:8080
 ```
 Prefer source? `git clone https://github.com/ifokeev/punchcard && cd punchcard && go build -o punch .` (Go 1.22+).
 
-## Drive your agents (Claude Code)
-punchcard ships as a Claude Code plugin with two roles:
-- **PM** — in your chat session, the `punchcard-pm` skill turns your intent into
-  well-scoped task briefs and files them on the board.
-- **Engineer** — in a worker session, run **`/punch-loop`**: it claims each task, spins
-  up a fresh subagent to implement → open a PR → self-review → attach proof of work,
-  then moves on until the board is clear.
+## Use it with Claude Code
+The binary is only half of it — the agents are driven by a Claude Code **plugin**
+(two skills + a command). Install it:
+```text
+/plugin marketplace add ifokeev/punchcard
+/plugin install punchcard@punchcard
+```
+> Needs the repo public. No marketplace? Copy `skills/*` → `~/.claude/skills/` and
+> `commands/*` → `~/.claude/commands/`, then `/reload-plugins`. Run `/help` to see
+> what's installed.
+
+- **PM skill** — in your chat session, turns your intent into well-scoped task briefs
+  and files them on the board.
+- **Engineer** — ships each task as a reviewed PR with proof of work, a fresh subagent
+  per task. Run it two ways:
+
+| Goal | Run | Behavior |
+|---|---|---|
+| Clear what's queued, then stop | `/punch-loop` | One-shot — drains the current queue within one turn, then ends. |
+| Stay on, pick up new tasks | `/loop 5m /punch-loop` | The built-in `/loop` re-fires `/punch-loop` every 5 min, so tasks the PM files later get picked up. `Esc` to stop. |
+
+> `/punch-loop` is a normal command: it loops only *within a turn* and won't see tasks
+> filed afterward — wrap it in the built-in `/loop` for a long-running worker.
 
 Open the board and watch tasks slide from todo → done in real time.
 
