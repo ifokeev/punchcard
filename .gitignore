@@ -1,2 +1,11 @@
 # Local planning artifacts (specs, plans) — kept out of the repo
 docs/superpowers/
+
+# Build artifacts
+/punch
+/punchcard
+/dist/
+
+# Runtime data (created by `punch serve`)
+/tasks.json
+/artifacts/
