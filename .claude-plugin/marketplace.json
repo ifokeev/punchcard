@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "punchcard",
+  "description": "Drive AI coding agents through a punchcard board — a PM files tasks, an Engineer ships them as reviewed PRs with proof of work.",
+  "owner": {
+    "name": "ifokeev",
+    "url": "https://github.com/ifokeev"
+  },
+  "plugins": [
+    {
+      "name": "punchcard",
+      "description": "PM + Engineer skills and a /punch-loop command that drive AI coding agents through a board: claim tasks, ship reviewed PRs with proof of work.",
+      "source": "./",
+      "category": "development"
+    }
+  ]
+}

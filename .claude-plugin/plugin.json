@@ -2,5 +2,10 @@
   "name": "punchcard",
   "version": "0.1.0",
   "description": "Drive AI coding agents through a punchcard board: a PM files tasks, an Engineer ships them as reviewed PRs with proof of work.",
-  "homepage": "https://github.com/ifokeev/punchcard"
+  "author": {
+    "name": "ifokeev",
+    "url": "https://github.com/ifokeev"
+  },
+  "homepage": "https://github.com/ifokeev/punchcard",
+  "keywords": ["ai-agents", "claude-code", "coding-agents", "pr", "board"]
 }
