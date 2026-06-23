@@ -86,5 +86,3 @@ func newMux(s *Store, originBase string) *http.ServeMux {
 	registerBoard(mux)                       // defined in server_board.go via Task 8
 	return mux
 }
-
-func registerBoard(mux *http.ServeMux) {}

@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>punchcard</title>
+<style>
+ body{font:14px monospace;margin:1rem;background:#fafafa;color:#111}
+ .cols{display:flex;gap:.5rem}
+ .col{flex:1;background:#fff;border:1px solid #ccc;padding:.5rem;min-height:60vh}
+ .col h2{font-size:13px;text-transform:uppercase;border-bottom:1px solid #ccc}
+ .card{border:1px solid #ddd;padding:.4rem;margin:.4rem 0;background:#fff}
+ .card a{display:block} .card img{max-width:100%;border:1px solid #eee}
+ form{margin-bottom:1rem} input,textarea{font:13px monospace;width:100%}
+</style></head>
+<body>
+<h1>punchcard</h1>
+<form id="f">
+ <input name="title" placeholder="title" required>
+ <textarea name="description" placeholder="description / brief"></textarea>
+ <textarea name="acceptance" placeholder="acceptance criteria"></textarea>
+ <input name="repo" placeholder="repo (local path)">
+ <input name="priority" type="number" value="1" placeholder="priority">
+ <button>add task</button>
+</form>
+<div class="cols" id="board"></div>
+<script>
+const COLS=["todo","in_progress","in_review","done","blocked","failed"];
+async function load(){
+ const tasks=await (await fetch("/api/tasks")).json();
+ const board=document.getElementById("board"); board.innerHTML="";
+ for(const c of COLS){
+  const col=document.createElement("div"); col.className="col";
+  col.innerHTML="<h2>"+c+"</h2>";
+  for(const t of tasks.filter(t=>t.status===c)){
+   const d=document.createElement("div"); d.className="card";
+   let h="<b>"+t.id+"</b> "+t.title;
+   if(t.pr_url) h+='<a href="'+t.pr_url+'">PR</a>';
+   for(const a of (t.artifacts||[])){
+    const src=a.replace("/artifacts/","/preview/");
+    if(/\.(png|gif|jpg|jpeg|webp)$/i.test(a)) h+='<img src="'+src+'">';
+    else if(/\.(mp4|webm)$/i.test(a)) h+='<video src="'+src+'" controls muted style="max-width:100%"></video>';
+    else h+='<a href="'+a+'">'+a+'</a>';
+   }
+   d.innerHTML=h; col.appendChild(d);
+  }
+  board.appendChild(col);
+ }
+}
+document.getElementById("f").onsubmit=async e=>{
+ e.preventDefault();
+ const fd=new FormData(e.target), body={};
+ fd.forEach((v,k)=>body[k]=k==="priority"?Number(v):v);
+ await fetch("/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+ e.target.reset(); load();
+};
+load(); setInterval(load,2000);
+</script>
+</body></html>
