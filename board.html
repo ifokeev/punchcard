@@ -1,55 +1,123 @@
 <!doctype html>
-<html>
-<head><meta charset="utf-8"><title>punchcard</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>punchcard</title>
 <style>
- body{font:14px monospace;margin:1rem;background:#fafafa;color:#111}
- .cols{display:flex;gap:.5rem}
- .col{flex:1;background:#fff;border:1px solid #ccc;padding:.5rem;min-height:60vh}
- .col h2{font-size:13px;text-transform:uppercase;border-bottom:1px solid #ccc}
- .card{border:1px solid #ddd;padding:.4rem;margin:.4rem 0;background:#fff}
- .card a{display:block} .card img{max-width:100%;border:1px solid #eee}
- form{margin-bottom:1rem} input,textarea{font:13px monospace;width:100%}
+ :root{
+  --ink:#1a1a1a;--sec:#555;--mut:#8a8a8a;--faint:#b3b3b3;
+  --line:rgba(0,0,0,.10);--accent:#2563eb;
+  --c-todo:#b3b3b3;--c-in_progress:#e0b13a;--c-in_review:#5e6ad2;
+  --c-done:#3fa66a;--c-blocked:#e08338;--c-failed:#df524d;
+ }
+ *{box-sizing:border-box}
+ body{margin:0;background:#fff;color:var(--ink);
+  font:16px/1.45 "Helvetica Neue",Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+ .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+ .bar{background:#000;color:#fff;padding:18px 28px;display:flex;align-items:baseline;gap:14px}
+ .bar b{font-size:21px;font-weight:700;letter-spacing:-.02em}
+ .bar span{font-size:14px;color:rgba(255,255,255,.5)}
+ .wrap{max-width:1320px;margin:0 auto;padding:28px}
+ .addrow{margin-bottom:28px}
+ .ghost{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;
+  font-family:inherit;font-size:15px;font-weight:600;color:var(--ink);background:#fff;
+  border:1px solid var(--line);padding:10px 16px;cursor:pointer;border-radius:8px;transition:border-color .15s}
+ .ghost:hover{border-color:var(--ink)}
+ .ghost svg{display:block;flex:none}
+ form[hidden]{display:none}
+ form{margin-bottom:28px;padding-bottom:28px;border-bottom:1px solid var(--line)}
+ input,textarea{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:16px;line-height:1.45;
+  color:var(--ink);padding:11px 13px;border:1px solid var(--line);background:#fff;width:100%;border-radius:8px}
+ input::placeholder,textarea::placeholder{color:var(--faint)}
+ input:focus,textarea:focus{outline:none;border-color:var(--ink)}
+ textarea{resize:vertical;min-height:40px}
+ .qa{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:stretch}
+ .prio{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+ .prio span{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);padding:0 12px;white-space:nowrap}
+ .prio input{width:62px;border:0;border-left:1px solid var(--line);border-radius:0;text-align:center}
+ .submit{font-family:inherit;font-size:15px;font-weight:600;background:var(--ink);color:#fff;border:0;border-radius:8px;padding:11px 24px;cursor:pointer}
+ .more{display:inline-block;margin-top:14px;font-size:14px;color:var(--mut);text-decoration:none}
+ .more:hover{color:var(--ink)}
+ .details{display:grid;gap:10px;margin-top:14px;max-width:760px}
+ .details[hidden]{display:none}
+ .cols{display:grid;grid-template-columns:repeat(6,1fr);gap:16px}
+ @media(max-width:1180px){.cols{grid-template-columns:repeat(3,1fr)}}
+ @media(max-width:700px){.cols{grid-template-columns:repeat(2,1fr)}}
+ .col>h2{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;letter-spacing:.01em;
+  color:var(--sec);margin:0 0 14px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+ .col>h2 .dot{width:9px;height:9px;border-radius:50%;flex:none}
+ .col>h2 .ct{margin-left:auto;font-size:14px;color:var(--faint);font-weight:500}
+ .dot-todo{background:var(--c-todo)}.dot-in_progress{background:var(--c-in_progress)}
+ .dot-in_review{background:var(--c-in_review)}.dot-done{background:var(--c-done)}
+ .dot-blocked{background:var(--c-blocked)}.dot-failed{background:var(--c-failed)}
+ .card{border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:10px;background:#fff;transition:border-color .15s}
+ .card:hover{border-color:rgba(0,0,0,.2)}
+ .card .t{font-size:16px;font-weight:600;line-height:1.32;letter-spacing:-.006em;margin-bottom:9px}
+ .card .m{font-size:14px;color:var(--mut)}
+ .card .pr{display:inline-block;margin-top:10px;font-size:15px;color:var(--accent);text-decoration:none}
+ .card .pr:hover{text-decoration:underline}
+ .card img,.card video{display:block;width:100%;margin-top:12px;border:1px solid var(--line);border-radius:6px}
+ .card .file{display:block;margin-top:8px;font-size:13px;color:var(--mut);word-break:break-all}
+ .empty{color:var(--faint);font-size:14px;padding:2px 0}
 </style></head>
 <body>
-<h1>punchcard</h1>
-<form id="f">
- <input name="title" placeholder="title" required>
- <textarea name="description" placeholder="description / brief"></textarea>
- <textarea name="acceptance" placeholder="acceptance criteria"></textarea>
- <input name="repo" placeholder="repo (local path)">
- <input name="priority" type="number" value="1" placeholder="priority">
- <button>add task</button>
+<div class="bar"><b>punchcard</b><span>watch your AI coding agents ship</span></div>
+<div class="wrap">
+<div class="addrow"><button type="button" id="newbtn" class="ghost"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2v11.6M2.2 8h11.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>New task</button></div>
+<form id="f" hidden>
+ <div class="qa">
+  <input name="title" placeholder="What should your agents build?" required>
+  <label class="prio"><span>priority</span><input name="priority" type="number" value="1" min="0"></label>
+  <button class="submit" type="submit">Add task</button>
+ </div>
+ <a class="more" href="#" id="more">+ details (description, acceptance, repo)</a>
+ <div class="details" id="details" hidden>
+  <textarea name="description" placeholder="description / brief" rows="2"></textarea>
+  <textarea name="acceptance" placeholder="acceptance criteria" rows="2"></textarea>
+  <input name="repo" placeholder="repo (local path)">
+ </div>
 </form>
 <div class="cols" id="board"></div>
+</div>
 <script>
+const LABELS={todo:"Todo",in_progress:"In Progress",in_review:"In Review",done:"Done",blocked:"Blocked",failed:"Failed"};
 const COLS=["todo","in_progress","in_review","done","blocked","failed"];
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 async function load(){
  const tasks=await (await fetch("/api/tasks")).json();
  const board=document.getElementById("board"); board.innerHTML="";
  for(const c of COLS){
+  const items=tasks.filter(t=>t.status===c);
   const col=document.createElement("div"); col.className="col";
-  col.innerHTML="<h2>"+c+"</h2>";
-  for(const t of tasks.filter(t=>t.status===c)){
-   const d=document.createElement("div"); d.className="card";
-   let h="<b>"+t.id+"</b> "+t.title;
-   if(t.pr_url) h+='<a href="'+t.pr_url+'">PR</a>';
+  let html='<h2><span class="dot dot-'+c+'"></span>'+LABELS[c]+'<span class="ct mono">'+items.length+'</span></h2>';
+  for(const t of items){
+   let h='<div class="card"><div class="t">'+esc(t.title)+'</div>';
+   h+='<div class="m mono">'+esc(t.id)+' &middot; P'+(t.priority||0)+'</div>';
+   if(t.pr_url) h+='<a class="pr" href="'+esc(t.pr_url)+'">View PR &rarr;</a>';
    for(const a of (t.artifacts||[])){
     const src=a.replace("/artifacts/","/preview/");
-    if(/\.(png|gif|jpg|jpeg|webp)$/i.test(a)) h+='<img src="'+src+'">';
-    else if(/\.(mp4|webm)$/i.test(a)) h+='<video src="'+src+'" controls muted style="max-width:100%"></video>';
-    else h+='<a href="'+a+'">'+a+'</a>';
+    if(/\.(png|gif|jpg|jpeg|webp)$/i.test(a)) h+='<img src="'+esc(src)+'">';
+    else if(/\.(mp4|webm)$/i.test(a)) h+='<video src="'+esc(src)+'" controls muted></video>';
+    else h+='<a class="file mono" href="'+esc(a)+'">'+esc(a)+'</a>';
    }
-   d.innerHTML=h; col.appendChild(d);
+   h+='</div>'; html+=h;
   }
-  board.appendChild(col);
+  if(!items.length) html+='<div class="empty">&mdash;</div>';
+  col.innerHTML=html; board.appendChild(col);
  }
 }
+document.getElementById("newbtn").onclick=()=>{const f=document.getElementById("f");f.hidden=false;document.getElementById("newbtn").hidden=true;f.querySelector('[name=title]').focus();};
+document.getElementById("more").onclick=e=>{e.preventDefault();document.getElementById("details").hidden=false;e.target.style.display="none";};
 document.getElementById("f").onsubmit=async e=>{
  e.preventDefault();
  const fd=new FormData(e.target), body={};
  fd.forEach((v,k)=>body[k]=k==="priority"?Number(v):v);
  await fetch("/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
- e.target.reset(); load();
+ e.target.reset();
+ document.getElementById("f").hidden=true; document.getElementById("newbtn").hidden=false;
+ load();
 };
 load(); setInterval(load,2000);
 </script>
