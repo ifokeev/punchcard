@@ -11,16 +11,23 @@ Electron.
 ## Why
 Fast (local single binary, no cloud round-trips) and context-clean (each task runs in
 a fresh subagent, not one ballooning chat). No database, no framework — just Go stdlib.
-(Positioning note: lead with proof-of-work + watch-it-ship + no-DB; don't call it an
-"orchestrator" or "task tracker" — see project memory.)
 
-## Quickstart
+## Install
 ```bash
-go install punchcard@latest   # or grab a release binary
+curl -fsSL https://raw.githubusercontent.com/ifokeev/punchcard/main/install.sh | sh
 punch serve                   # board + API on http://127.0.0.1:8080
 ```
-Open the board, add a task. In one Claude Code session use the **PM** skill to file
-tasks; in another run `/loop` with the **Engineer** skill to ship them.
+Prefer source? `git clone https://github.com/ifokeev/punchcard && cd punchcard && go build -o punch .` (Go 1.22+).
+
+## Drive your agents (Claude Code)
+punchcard ships as a Claude Code plugin with two roles:
+- **PM** — in your chat session, the `punchcard-pm` skill turns your intent into
+  well-scoped task briefs and files them on the board.
+- **Engineer** — in a worker session, run **`/punch-loop`**: it claims each task, spins
+  up a fresh subagent to implement → open a PR → self-review → attach proof of work,
+  then moves on until the board is clear.
+
+Open the board and watch tasks slide from todo → done in real time.
 
 ## Make it remote (pick one)
 | Tier | How |
@@ -31,7 +38,3 @@ tasks; in another run `/loop` with the **Engineer** skill to ship them.
 
 > Binding a non-loopback address without `--token` is refused (pass `--insecure` to
 > override). Put Tailscale/Cloudflare in front; the bearer token is defense-in-depth.
-
-## Pair with
-[graphify](https://github.com/safishamsi/graphify) for a codebase map — punchcard is
-the work memory, graphify is the code map.
