@@ -8,5 +8,6 @@
   },
   "homepage": "https://github.com/ifokeev/punchcard",
   "license": "MIT",
+  "hooks": "./hooks/hooks.json",
   "keywords": ["ai-agents", "claude-code", "coding-agents", "pr", "board"]
 }
