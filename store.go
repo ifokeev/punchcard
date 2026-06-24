@@ -241,6 +241,21 @@ func (s *Store) Create(in TaskInput) (*Task, error) {
 	return t, nil
 }
 
+func (s *Store) DeleteTask(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return errNotFound
+	}
+	delete(s.tasks, id)
+	if err := s.save(); err != nil {
+		s.tasks[id] = t // rollback
+		return err
+	}
+	return nil
+}
+
 func (s *Store) SweepStuck(maxAge time.Duration) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

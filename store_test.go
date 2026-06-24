@@ -124,6 +124,31 @@ func TestListReturnsCopy(t *testing.T) {
 	}
 }
 
+func TestDeleteTask(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.now = fixedClock()
+
+	// Create then delete — Get should return false afterwards.
+	task, err := s.Create(TaskInput{Title: "to delete"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := s.DeleteTask(task.ID); err != nil {
+		t.Fatalf("DeleteTask: %v", err)
+	}
+	_, ok := s.Get(task.ID)
+	if ok {
+		t.Fatalf("task should be gone after delete")
+	}
+
+	// Deleting a missing id returns errNotFound.
+	if err := s.DeleteTask("t_9999"); err == nil {
+		t.Fatalf("expected error deleting missing task")
+	} else if err != errNotFound {
+		t.Fatalf("expected errNotFound, got %v", err)
+	}
+}
+
 func TestSweepStuck(t *testing.T) {
 	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
 	clk := fixedClock()

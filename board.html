@@ -52,9 +52,11 @@
  .dot-todo{background:var(--c-todo)}.dot-in_progress{background:var(--c-in_progress)}
  .dot-in_review{background:var(--c-in_review)}.dot-done{background:var(--c-done)}
  .dot-blocked{background:var(--c-blocked)}.dot-failed{background:var(--c-failed)}
- .card{border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:10px;background:#fff;transition:border-color .15s}
+ .card{position:relative;border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:10px;background:#fff;transition:border-color .15s}
  .card:hover{border-color:rgba(0,0,0,.2)}
- .card .t{font-size:16px;font-weight:600;line-height:1.32;letter-spacing:-.006em;margin-bottom:9px}
+ .card .t{font-size:16px;font-weight:600;line-height:1.32;letter-spacing:-.006em;margin-bottom:9px;padding-right:20px}
+ .card .del{position:absolute;top:10px;right:10px;background:none;border:none;padding:0;cursor:pointer;font-size:16px;line-height:1;color:var(--faint);transition:color .15s}
+ .card .del:hover{color:var(--ink)}
  .card .m{font-size:14px;color:var(--mut)}
  .card .pr{display:inline-block;margin-top:10px;font-size:15px;color:var(--accent);text-decoration:none}
  .card .pr:hover{text-decoration:underline}
@@ -93,9 +95,9 @@ async function load(){
   const col=document.createElement("div"); col.className="col";
   let html='<h2><span class="dot dot-'+c+'"></span>'+LABELS[c]+'<span class="ct mono">'+items.length+'</span></h2>';
   for(const t of items){
-   let h='<div class="card"><div class="t">'+esc(t.title)+'</div>';
+   let h='<div class="card"><button class="del" onclick="delTask(\''+esc(t.id)+'\')" title="Delete">&times;</button><div class="t">'+esc(t.title)+'</div>';
    h+='<div class="m mono">'+esc(t.id)+' &middot; P'+(t.priority||0)+'</div>';
-   if(t.pr_url) h+='<a class="pr" href="'+esc(t.pr_url)+'">View PR &rarr;</a>';
+   if(t.pr_url) h+='<a class="pr" href="'+esc(t.pr_url)+'" target="_blank" rel="noopener noreferrer">View PR &rarr;</a>';
    for(const a of (t.artifacts||[])){
     const src=a.replace("/artifacts/","/preview/");
     if(/\.(png|gif|jpg|jpeg|webp)$/i.test(a)) h+='<img src="'+esc(src)+'">';
@@ -119,6 +121,7 @@ document.getElementById("f").onsubmit=async e=>{
  document.getElementById("f").hidden=true; document.getElementById("newbtn").hidden=false;
  load();
 };
+async function delTask(id){ if(!confirm('Delete this task?')) return; await fetch('/api/tasks/'+encodeURIComponent(id),{method:'DELETE'}); load(); }
 load(); setInterval(load,2000);
 </script>
 </body></html>

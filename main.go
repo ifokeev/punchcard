@@ -12,7 +12,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("usage: punch <serve|add|next|update|attach|list|get|memory|config> [flags]")
+		fmt.Println("usage: punch <serve|add|next|update|attach|list|get|rm|memory|config> [flags]")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
@@ -30,6 +30,8 @@ func main() {
 		cmdList(os.Args[2:])
 	case "get":
 		cmdGet(os.Args[2:])
+	case "rm":
+		cmdRm(os.Args[2:])
 	case "memory":
 		cmdMemory(os.Args[2:])
 	case "config":
@@ -164,6 +166,17 @@ func cmdGet(args []string) {
 		fail("get failed (%d): %v", code, err)
 	}
 	fmt.Println(string(body))
+}
+
+func cmdRm(args []string) {
+	if len(args) < 1 {
+		fail("usage: punch rm <id>")
+	}
+	code, body, err := doDelete("/api/tasks/" + args[0])
+	if err != nil || code != http.StatusNoContent {
+		fail("rm failed (%d): %s %v", code, body, err)
+	}
+	fmt.Println("deleted", args[0])
 }
 
 // cmdMemory dispatches memory subcommands: add, search, list, get, rm.

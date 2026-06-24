@@ -85,6 +85,41 @@ func TestPatchViaAPI(t *testing.T) {
 	}
 }
 
+func TestDeleteTaskViaAPI(t *testing.T) {
+	h := newTestServer(t)
+
+	// Create a task.
+	body, _ := json.Marshal(map[string]any{"title": "to delete"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/tasks", bytes.NewReader(body)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", rec.Code, rec.Body)
+	}
+	var created Task
+	json.Unmarshal(rec.Body.Bytes(), &created)
+
+	// DELETE /api/tasks/{id} → 204 No Content.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("DELETE", "/api/tasks/"+created.ID, nil))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("DELETE status=%d body=%s", rec.Code, rec.Body)
+	}
+
+	// GET /api/tasks/{id} → 404 after delete.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/tasks/"+created.ID, nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 after delete, got %d", rec.Code)
+	}
+
+	// DELETE a bogus id → 404.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("DELETE", "/api/tasks/t_9999", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for bogus delete, got %d", rec.Code)
+	}
+}
+
 func TestMemoryPostAndSearchViaAPI(t *testing.T) {
 	h := newTestServer(t)
 
