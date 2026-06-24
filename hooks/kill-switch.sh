@@ -16,13 +16,21 @@
 set -u
 [ -n "${PUNCH_KILLSWITCH:-}" ] || exit 0
 
-url="${PUNCH_URL:-http://127.0.0.1:8080}"
+# Resolve the board: env wins; otherwise ask the (profile-aware) punch binary, so
+# PUNCH_PROFILE / `punch config use` route the kill-switch to the same board too.
+url="${PUNCH_URL:-}"
+tok="${PUNCH_TOKEN:-}"
+if command -v punch >/dev/null 2>&1; then
+  [ -z "$url" ] && url="$(punch config url 2>/dev/null || true)"
+  [ -z "$tok" ] && tok="$(punch config token 2>/dev/null || true)"
+fi
+url="${url:-http://127.0.0.1:8080}"
 url="${url%/}/api/control"
 
 # Two branches (not an array) so this stays portable to macOS bash 3.2, where an
 # empty array under `set -u` errors out.
-if [ -n "${PUNCH_TOKEN:-}" ]; then
-  resp="$(curl -fsS --max-time 1 -H "Authorization: Bearer ${PUNCH_TOKEN}" "$url" 2>/dev/null)" || exit 0
+if [ -n "$tok" ]; then
+  resp="$(curl -fsS --max-time 1 -H "Authorization: Bearer $tok" "$url" 2>/dev/null)" || exit 0
 else
   resp="$(curl -fsS --max-time 1 "$url" 2>/dev/null)" || exit 0
 fi

@@ -97,6 +97,77 @@ func TestLoadConfigMissing(t *testing.T) {
 	}
 }
 
+// TestProfileResolution verifies current-profile, PUNCH_PROFILE override, and
+// that PUNCH_URL still wins over any profile.
+func TestProfileResolution(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PUNCH_URL", "")
+	t.Setenv("PUNCH_TOKEN", "")
+	t.Setenv("PUNCH_PROFILE", "")
+
+	cfg := Config{
+		Current: "b",
+		Profiles: map[string]Profile{
+			"a": {URL: "http://a", Token: "tok-a"},
+			"b": {URL: "http://b", Token: "tok-b"},
+		},
+	}
+	if err := saveConfig(cfg); err != nil {
+		t.Fatalf("saveConfig: %v", err)
+	}
+
+	// current = b
+	if got := resolvedURL(); got != "http://b" {
+		t.Errorf("current url: got %q want http://b", got)
+	}
+	if got := resolvedToken(); got != "tok-b" {
+		t.Errorf("current token: got %q want tok-b", got)
+	}
+
+	// PUNCH_PROFILE selects a different profile
+	t.Setenv("PUNCH_PROFILE", "a")
+	if got := resolvedURL(); got != "http://a" {
+		t.Errorf("profile env url: got %q want http://a", got)
+	}
+	if got := resolvedToken(); got != "tok-a" {
+		t.Errorf("profile env token: got %q want tok-a", got)
+	}
+
+	// PUNCH_URL beats the profile
+	t.Setenv("PUNCH_URL", "http://override")
+	if got := resolvedURL(); got != "http://override" {
+		t.Errorf("env url should win: got %q", got)
+	}
+}
+
+// TestUnknownProfileFallsToDefault verifies an unmatched profile resolves to the
+// localhost default (not a stale value).
+func TestUnknownProfileFallsToDefault(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PUNCH_URL", "")
+	t.Setenv("PUNCH_TOKEN", "")
+	t.Setenv("PUNCH_PROFILE", "nope")
+	saveConfig(Config{Current: "a", Profiles: map[string]Profile{"a": {URL: "http://a"}}})
+	if got := resolvedURL(); got != "http://127.0.0.1:8080" {
+		t.Errorf("unknown profile should fall to default, got %q", got)
+	}
+}
+
+// TestMigrateLegacy verifies flat url/token fold into the "default" profile.
+func TestMigrateLegacy(t *testing.T) {
+	c := Config{URL: "http://old", Token: "old-tok"}
+	migrateLegacy(&c)
+	if c.URL != "" || c.Token != "" {
+		t.Errorf("legacy fields not cleared: %+v", c)
+	}
+	if p, ok := c.Profiles["default"]; !ok || p.URL != "http://old" || p.Token != "old-tok" {
+		t.Errorf("legacy not migrated to default profile: %+v", c.Profiles)
+	}
+	if c.Current != "default" {
+		t.Errorf("current should default to 'default' after migration, got %q", c.Current)
+	}
+}
+
 // TestMaskToken verifies the masking helper.
 func TestMaskToken(t *testing.T) {
 	cases := []struct {

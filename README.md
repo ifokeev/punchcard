@@ -97,3 +97,19 @@ punch config show   # confirm settings
 This writes `~/.punch/config.json` (mode 0600). All subsequent `punch` calls — including
 those made by dispatched subagents — read the file automatically. The environment
 variables `PUNCH_URL` and `PUNCH_TOKEN` always override the config file when set.
+
+### Multiple boards (profiles)
+Running a board per project? Define named profiles and switch with one env var:
+```bash
+punch config set --profile work --url https://work.example.com --token <tok>
+punch config set --profile side --url https://side.example.com --token <tok>
+punch config use work          # set the default
+punch config list              # see them all (* = active)
+```
+Pick a profile per worker session with `PUNCH_PROFILE` (a `.envrc` per repo is handy):
+```bash
+PUNCH_PROFILE=side claude       # then /loop /punch-loop → drives the side board
+```
+That one var routes the loop, every subagent, and the kill-switch hook to that board, so
+two projects run side by side without colliding. `PUNCH_URL`/`PUNCH_TOKEN` still win over
+a profile.

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -399,16 +400,25 @@ func sweepStuck(s *Store) {
 	}
 }
 
-// cmdConfig dispatches config subcommands: set, show.
+// cmdConfig dispatches config subcommands. set/use/list/show are user-facing;
+// url/token print the resolved values (used by scripts and the kill-switch hook).
 func cmdConfig(args []string) {
 	if len(args) < 1 {
-		fail("usage: punch config <set|show> [flags]")
+		fail("usage: punch config <set|use|list|show> [flags]")
 	}
 	switch args[0] {
 	case "set":
 		cmdConfigSet(args[1:])
+	case "use":
+		cmdConfigUse(args[1:])
+	case "list":
+		cmdConfigList()
 	case "show":
 		cmdConfigShow()
+	case "url":
+		fmt.Println(resolvedURL())
+	case "token":
+		fmt.Println(resolvedToken())
 	default:
 		fail("unknown config subcommand %q", args[0])
 	}
@@ -426,6 +436,7 @@ func maskToken(tok string) string {
 func cmdConfigSet(args []string) {
 	const sentinel = "\x00unset\x00"
 	fs := flag.NewFlagSet("config set", flag.ExitOnError)
+	profileFlag := fs.String("profile", "", "profile name (default: current profile, or 'default')")
 	urlFlag := fs.String("url", sentinel, "server URL")
 	tokenFlag := fs.String("token", sentinel, "bearer token")
 	fs.Parse(args)
@@ -443,37 +454,120 @@ func cmdConfigSet(args []string) {
 	})
 
 	cfg := loadConfig()
+	if cfg.Profiles == nil {
+		cfg.Profiles = map[string]Profile{}
+	}
+	migrateLegacy(&cfg)
+
+	name := *profileFlag
+	if name == "" {
+		name = cfg.Current
+	}
+	if name == "" {
+		name = "default"
+	}
+
+	p := cfg.Profiles[name]
 	if urlSet {
-		cfg.URL = *urlFlag
+		p.URL = *urlFlag
 	}
 	if tokenSet {
-		cfg.Token = *tokenFlag
+		p.Token = *tokenFlag
+	}
+	cfg.Profiles[name] = p
+	if cfg.Current == "" {
+		cfg.Current = name // first profile becomes the active default
 	}
 	if err := saveConfig(cfg); err != nil {
 		fail("config set: %v", err)
 	}
 
-	fmt.Printf("Config saved to %s\n", configPath())
+	fmt.Printf("Config saved to %s (profile %q)\n", configPath(), name)
 	if urlSet {
-		fmt.Printf("  url   = %s\n", cfg.URL)
+		fmt.Printf("  url   = %s\n", p.URL)
 	}
 	if tokenSet {
-		if cfg.Token != "" {
-			fmt.Printf("  token = %s\n", maskToken(cfg.Token))
+		if p.Token != "" {
+			fmt.Printf("  token = %s\n", maskToken(p.Token))
 		} else {
 			fmt.Printf("  token = (cleared)\n")
 		}
+	}
+	if cfg.Current == name {
+		fmt.Println("  (active profile)")
+	} else {
+		fmt.Printf("  (switch to it with: punch config use %s)\n", name)
+	}
+}
+
+func cmdConfigUse(args []string) {
+	if len(args) < 1 {
+		fail("usage: punch config use <profile>")
+	}
+	name := args[0]
+	cfg := loadConfig()
+	if cfg.Profiles == nil {
+		cfg.Profiles = map[string]Profile{}
+	}
+	migrateLegacy(&cfg)
+	if _, ok := cfg.Profiles[name]; !ok {
+		fail("no profile %q — define it first: punch config set --profile %s --url ... --token ...", name, name)
+	}
+	cfg.Current = name
+	if err := saveConfig(cfg); err != nil {
+		fail("config use: %v", err)
+	}
+	fmt.Printf("Now using profile %q\n", name)
+}
+
+func cmdConfigList() {
+	cfg := loadConfig()
+	migrateLegacy(&cfg)
+	if len(cfg.Profiles) == 0 {
+		fmt.Println("No profiles. Add one: punch config set --profile <name> --url ... --token ...")
+		return
+	}
+	names := make([]string, 0, len(cfg.Profiles))
+	for n := range cfg.Profiles {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		marker := "  "
+		if n == cfg.Current {
+			marker = "* "
+		}
+		p := cfg.Profiles[n]
+		tok := "(no token)"
+		if p.Token != "" {
+			tok = maskToken(p.Token)
+		}
+		fmt.Printf("%s%-14s %-32s %s\n", marker, n, p.URL, tok)
+	}
+	if env := os.Getenv("PUNCH_PROFILE"); env != "" {
+		fmt.Printf("\nPUNCH_PROFILE=%s overrides the active profile in this shell.\n", env)
 	}
 }
 
 func cmdConfigShow() {
 	path := configPath()
 	cfg := loadConfig()
+	active := activeProfileName(cfg)
+	_, profileExists := cfg.Profiles[active]
+
+	profSource := "default"
+	if os.Getenv("PUNCH_PROFILE") != "" {
+		profSource = "env (PUNCH_PROFILE)"
+	} else if cfg.Current != "" {
+		profSource = "config current"
+	}
 
 	url := resolvedURL()
 	urlSource := "default"
 	if os.Getenv("PUNCH_URL") != "" {
 		urlSource = "env (PUNCH_URL)"
+	} else if profileExists {
+		urlSource = "profile " + active
 	} else if cfg.URL != "" {
 		urlSource = "config file"
 	}
@@ -485,12 +579,15 @@ func cmdConfigShow() {
 		tokenDesc = maskToken(token)
 		if os.Getenv("PUNCH_TOKEN") != "" {
 			tokenSource = " [env: PUNCH_TOKEN]"
+		} else if profileExists {
+			tokenSource = " [profile " + active + "]"
 		} else {
 			tokenSource = " [config file]"
 		}
 	}
 
 	fmt.Printf("Config file : %s\n", path)
+	fmt.Printf("Profile     : %s [%s]\n", active, profSource)
 	fmt.Printf("URL         : %s [%s]\n", url, urlSource)
 	fmt.Printf("Token       : %s%s\n", tokenDesc, tokenSource)
 }
