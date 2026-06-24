@@ -45,7 +45,8 @@ The binary is only half of it — the agents are driven by a Claude Code **plugi
 > `/punch-loop` is a normal command: it loops only *within a turn* and won't see tasks
 > filed afterward — wrap it in the built-in `/loop` for a long-running worker.
 
-Open the board and watch tasks slide from todo → done in real time — or **drag a card
+Open the board and watch tasks slide from todo → done in real time. **Click any card**
+for its full brief (description, acceptance criteria, PR, proof of work), or **drag a card
 between columns** to set its status yourself (same as `PATCH /api/tasks/{id}`).
 
 ## Control the run
