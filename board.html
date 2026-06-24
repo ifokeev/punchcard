@@ -25,6 +25,7 @@
  #pausebtn.paused{border-color:var(--c-in_progress);color:#a87908}
  .ghost.danger{color:var(--c-failed)}
  .ghost.danger:hover{border-color:var(--c-failed)}
+ .ghost.danger.on{background:var(--c-failed);color:#fff;border-color:var(--c-failed)}
  .conc{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--line);border-radius:8px;padding:0 6px 0 12px;
   font-size:13px;font-weight:600;color:var(--mut);white-space:nowrap}
  .conc b{min-width:18px;text-align:center;color:var(--ink);font-size:15px;padding:0 4px}
@@ -178,16 +179,17 @@ async function loadControl(){
  const b=document.getElementById("pausebtn");
  b.innerHTML=ctl.paused?"&#9654; Resume":"&#9208; Pause";
  b.classList.toggle("paused",ctl.paused);
+ document.getElementById("stopbtn").classList.toggle("on",!!ctl.stopped);
 }
 async function patchControl(body){
  await fetch("/api/control",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
  loadControl();
 }
-function togglePause(){ patchControl({paused:!ctl.paused}); }
+function togglePause(){ patchControl(ctl.paused?{paused:false,stopped:false}:{paused:true}); }
 function setConc(d){ patchControl({concurrency:Math.max(1,(ctl.concurrency||3)+d)}); }
 async function stopAll(){
- if(!confirm('Stop all runs? This pauses the board and cancels every in-progress task (each agent aborts at its next checkpoint).')) return;
- await fetch("/api/control",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({paused:true})});
+ if(!confirm('Stop all runs? Pauses the board, cancels every in-progress task, and (if the kill-switch hook is enabled) hard-halts the loop on its next tool call. Clear with Resume.')) return;
+ await fetch("/api/control",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({paused:true,stopped:true})});
  await fetch("/api/cancel-all",{method:"POST"});
  loadControl(); load();
 }

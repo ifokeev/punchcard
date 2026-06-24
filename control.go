@@ -24,10 +24,17 @@ func defaultConcurrency() int {
 }
 
 // Control is the server-side, board-controllable run state the loop honors:
-// whether claiming is paused, and how many engineer subagents may run at once.
+// whether claiming is paused, how many engineer subagents may run at once, and
+// the hard-stop flag the PreToolUse kill-switch hook watches.
+//
+// paused is SOFT: claiming returns 423 so the loop idles and resumes from the
+// board (the session stays alive). stopped is HARD: the kill-switch hook denies
+// the next tool call so a running loop/subagent halts immediately. Resume clears
+// both.
 type Control struct {
 	Paused      bool `json:"paused"`
 	Concurrency int  `json:"concurrency"`
+	Stopped     bool `json:"stopped"`
 }
 
 // ControlStore persists Control atomically, guarded by a single mutex.
@@ -63,7 +70,7 @@ func (cs *ControlStore) Get() Control {
 
 // Patch applies the non-nil fields, clamps concurrency to >=1, persists, and
 // returns the new state. On flush failure it rolls back and returns the error.
-func (cs *ControlStore) Patch(paused *bool, concurrency *int) (Control, error) {
+func (cs *ControlStore) Patch(paused *bool, concurrency *int, stopped *bool) (Control, error) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	old := cs.ctl
@@ -76,6 +83,9 @@ func (cs *ControlStore) Patch(paused *bool, concurrency *int) (Control, error) {
 			c = 1
 		}
 		cs.ctl.Concurrency = c
+	}
+	if stopped != nil {
+		cs.ctl.Stopped = *stopped
 	}
 	if err := cs.save(); err != nil {
 		cs.ctl = old

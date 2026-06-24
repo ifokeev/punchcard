@@ -57,13 +57,25 @@ session — handy when the loop runs somewhere you can't reach:
 | Cap how many agents run at once | **agents −/+** | `punch concurrency 3` |
 | Pause / resume claiming | **Pause** / **Resume** | `punch pause` · `punch resume` |
 | Cancel one running task | **Cancel run** on the card | `punch cancel <id>` |
-| Kill-switch: pause + cancel every run | **Stop all** | `punch pause && punch cancel --all` |
+| Kill-switch: stop everything now | **Stop all** | `punch stop` |
 
 Concurrency is a **hard cap** — the server never lets more than that many tasks be in
 progress at once (default **3**; seed a different default with `PUNCH_CONCURRENCY`).
-**Pausing makes the loop idle** and it resumes when you un-pause from the board (no
-terminal access needed); **cancelling** makes the owning agent abort at its next
-checkpoint and moves the task to *Cancelled*.
+**Pause is soft**: the loop idles and resumes when you un-pause from the board (no
+terminal access needed). **Cancel** makes the owning agent abort at its next checkpoint
+and moves the task to *Cancelled*. **Stop all** pauses, cancels every running task, and
+(with the hook below) hard-halts the loop; clear it with **Resume**.
+
+### Instant kill-switch (optional hook)
+By default cancel is **cooperative** — a running agent stops at its next checkpoint,
+not mid-edit. For an *instant* halt, enable the bundled **PreToolUse hook** by starting
+the worker session with `PUNCH_KILLSWITCH=1`:
+```bash
+PUNCH_KILLSWITCH=1 claude        # then run /loop /punch-loop
+```
+Now **Stop all** (or `punch stop`) halts the loop on its very next tool call. The hook is
+**opt-in** — it does nothing without that env var, so your other Claude sessions are
+untouched — and **fail-open**: if the board is unreachable it never blocks your work.
 
 ## Make it remote (pick one)
 | Tier | How |

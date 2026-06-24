@@ -17,12 +17,13 @@ func TestControlDefaultsAndRoundtrip(t *testing.T) {
 
 	paused := true
 	conc := 0 // must clamp to 1
-	ctl, err := cs.Patch(&paused, &conc)
+	stopped := true
+	ctl, err := cs.Patch(&paused, &conc, &stopped)
 	if err != nil {
 		t.Fatalf("Patch: %v", err)
 	}
-	if !ctl.Paused || ctl.Concurrency != 1 {
-		t.Fatalf("patched = %+v, want {true 1}", ctl)
+	if !ctl.Paused || ctl.Concurrency != 1 || !ctl.Stopped {
+		t.Fatalf("patched = %+v, want {true 1 true}", ctl)
 	}
 
 	// Reload from disk: state must persist.
@@ -30,18 +31,18 @@ func TestControlDefaultsAndRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := cs2.Get(); !got.Paused || got.Concurrency != 1 {
-		t.Fatalf("reloaded = %+v, want {true 1}", got)
+	if got := cs2.Get(); !got.Paused || got.Concurrency != 1 || !got.Stopped {
+		t.Fatalf("reloaded = %+v, want {true 1 true}", got)
 	}
 }
 
 func TestControlPartialPatch(t *testing.T) {
 	cs, _ := NewControlStore(filepath.Join(t.TempDir(), "control.json"))
 	conc := 5
-	if _, err := cs.Patch(nil, &conc); err != nil { // only concurrency
+	if _, err := cs.Patch(nil, &conc, nil); err != nil { // only concurrency
 		t.Fatalf("Patch: %v", err)
 	}
-	if got := cs.Get(); got.Paused || got.Concurrency != 5 {
-		t.Fatalf("partial patch = %+v, want {false 5}", got)
+	if got := cs.Get(); got.Paused || got.Concurrency != 5 || got.Stopped {
+		t.Fatalf("partial patch = %+v, want {false 5 false}", got)
 	}
 }

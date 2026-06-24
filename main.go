@@ -13,7 +13,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("usage: punch <serve|add|next|update|attach|cancel|list|get|rm|pause|resume|concurrency|memory|config> [flags]")
+		fmt.Println("usage: punch <serve|add|next|update|attach|cancel|list|get|rm|pause|resume|stop|concurrency|memory|config> [flags]")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
@@ -39,6 +39,8 @@ func main() {
 		cmdPause(true)
 	case "resume":
 		cmdPause(false)
+	case "stop":
+		cmdStop()
 	case "concurrency":
 		cmdConcurrency(os.Args[2:])
 	case "memory":
@@ -155,9 +157,27 @@ func cmdCancel(args []string) {
 }
 
 func cmdPause(paused bool) {
-	code, body, err := doJSON("PATCH", "/api/control", map[string]any{"paused": paused})
+	patch := map[string]any{"paused": paused}
+	if !paused {
+		patch["stopped"] = false // resume clears a hard stop too
+	}
+	code, body, err := doJSON("PATCH", "/api/control", patch)
 	if err != nil || code != http.StatusOK {
 		fail("control failed (%d): %s %v", code, body, err)
+	}
+	fmt.Println(string(body))
+}
+
+// cmdStop is the hard kill-switch: pause + set the stopped flag (the PreToolUse
+// hook halts a running loop/subagent on its next tool call) + cancel everything
+// in progress. Clear it with `punch resume`.
+func cmdStop() {
+	code, body, err := doJSON("PATCH", "/api/control", map[string]any{"paused": true, "stopped": true})
+	if err != nil || code != http.StatusOK {
+		fail("stop failed (%d): %s %v", code, body, err)
+	}
+	if c, b, e := doJSON("POST", "/api/cancel-all", nil); e != nil || c != http.StatusOK {
+		fail("stop cancel-all failed (%d): %s %v", c, b, e)
 	}
 	fmt.Println(string(body))
 }

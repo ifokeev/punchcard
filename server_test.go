@@ -111,6 +111,15 @@ func TestControlAndPauseViaAPI(t *testing.T) {
 	if ctl.Concurrency != 1 {
 		t.Fatalf("concurrency clamp: want 1, got %d", ctl.Concurrency)
 	}
+
+	// Hard-stop flag round-trips through the API (the kill-switch hook reads it).
+	patch, _ = json.Marshal(map[string]any{"stopped": true})
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("PATCH", "/api/control", bytes.NewReader(patch)))
+	json.Unmarshal(rec.Body.Bytes(), &ctl)
+	if !ctl.Stopped {
+		t.Fatalf("stopped not set via API: %+v", ctl)
+	}
 }
 
 func TestBatchClaimViaAPI(t *testing.T) {

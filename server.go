@@ -91,12 +91,13 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 		var in struct {
 			Paused      *bool `json:"paused"`
 			Concurrency *int  `json:"concurrency"`
+			Stopped     *bool `json:"stopped"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			http.Error(w, "bad json", http.StatusBadRequest)
 			return
 		}
-		ctl, err := cs.Patch(in.Paused, in.Concurrency)
+		ctl, err := cs.Patch(in.Paused, in.Concurrency, in.Stopped)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

@@ -41,7 +41,7 @@ make dev-uninstall                        # remove the binary + linked skills/co
 board.html                 the embedded board UI
 skills/                    Claude Code PM + Engineer skills
 commands/punch-loop.md     the /punch-loop command
-hooks/                     SessionStart hook — reminds (never installs) if agent-browser is missing
+hooks/                     SessionStart agent-browser reminder + opt-in PreToolUse kill-switch
 .claude-plugin/            plugin + marketplace manifests
 examples/                  demo seed + live demo driver
 Makefile                   build / cross-compile
