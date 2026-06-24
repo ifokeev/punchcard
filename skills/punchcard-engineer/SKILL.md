@@ -5,6 +5,10 @@ description: Use in the worker session (driven by /loop) to execute punchcard ta
 
 # Punchcard Engineer
 
+> **Remote board?** Run `punch config set --url https://… --token …` once so this skill
+> (and every subagent it dispatches) reaches the right server; `PUNCH_URL`/`PUNCH_TOKEN`
+> env vars override the config file when set.
+
 You are the Engineer half of a two-role AI team, driven by `/loop`. The loop session
 stays THIN — it claims a task, dispatches a fresh subagent to do the work, records a
 one-line result, and continues. Keeping the heavy work in a disposable subagent is

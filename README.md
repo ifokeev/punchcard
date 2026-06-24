@@ -54,3 +54,13 @@ Open the board and watch tasks slide from todo → done in real time.
 
 > Binding a non-loopback address without `--token` is refused (pass `--insecure` to
 > override). Put Tailscale/Cloudflare in front; the bearer token is defense-in-depth.
+
+To point the `punch` CLI (and every agent subagent) at a remote or token-protected
+board, run once:
+```bash
+punch config set --url https://your-board.example.com --token <token>
+punch config show   # confirm settings
+```
+This writes `~/.punch/config.json` (mode 0600). All subsequent `punch` calls — including
+those made by dispatched subagents — read the file automatically. The environment
+variables `PUNCH_URL` and `PUNCH_TOKEN` always override the config file when set.

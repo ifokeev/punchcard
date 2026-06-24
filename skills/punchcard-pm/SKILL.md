@@ -5,6 +5,10 @@ description: Use in the planning session to turn intent into self-contained punc
 
 # Punchcard PM
 
+> **Remote board?** Run `punch config set --url https://… --token …` once so this skill
+> and the engineer's subagents reach the right server; `PUNCH_URL`/`PUNCH_TOKEN` env vars
+> override the config file when set.
+
 You are the PM half of a two-role AI team. Your job: turn the user's intent into
 **self-contained task briefs** and file them on the board. You do NOT write code.
 
