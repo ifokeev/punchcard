@@ -4,8 +4,6 @@
 
 ![punchcard board](docs/demo.gif)
 
-> The PM files tasks; the Engineer ships them as reviewed PRs with proof of work — all on one board. Reproduce it locally: `punch serve`, then `examples/demo-drive.sh`.
-
 Punchcard is a dead-simple **board** for solo devs who delegate to AI coding agents:
 queue the work, then watch your agents claim each task, ship a PR, and leave **proof
 of work** — a gif or screenshot — as receipts. Every task starts with **fresh
