@@ -32,6 +32,8 @@ func main() {
 		cmdCancel(os.Args[2:])
 	case "list":
 		cmdList(os.Args[2:])
+	case "pending-merges":
+		cmdPendingMerges()
 	case "get":
 		cmdGet(os.Args[2:])
 	case "rm":
@@ -263,6 +265,16 @@ func cmdList(args []string) {
 	code, body, err := doJSON("GET", "/api/tasks", nil)
 	if err != nil || code != http.StatusOK {
 		fail("list failed (%d): %v", code, err)
+	}
+	fmt.Println(string(body))
+}
+
+// cmdPendingMerges prints the done-but-unmerged tasks that are blocking a todo
+// (via depends_on) — the minimal set the loop checks for merge each tick.
+func cmdPendingMerges() {
+	code, body, err := doJSON("GET", "/api/pending-merges", nil)
+	if err != nil || code != http.StatusOK {
+		fail("pending-merges failed (%d): %v", code, err)
 	}
 	fmt.Println(string(body))
 }

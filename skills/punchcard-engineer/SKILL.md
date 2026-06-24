@@ -25,11 +25,11 @@ and **wait for all of it to finish before claiming the next batch.**
 **Dependencies (merge-gating).** A task may declare `depends_on` (other task ids); the
 server won't hand it out until each of those has **merged**, and this loop is what marks
 them merged. So at the START of every iteration, *before* claiming, reconcile merges:
-run `punch list` and, for any task that is `done` with a `pr_url` *and* listed in some
-todo task's `depends_on`, check `gh pr view <pr_url> --json state -q .state`; if it's
-`MERGED`, run `punch update <dep_id> --merged`. That unblocks its dependents. (Marking a
-task `done` does NOT unblock dependents — only a real merge does. Only check deps that
-are blocking something.)
+run `punch pending-merges` — the server returns ONLY the done-but-unmerged tasks that are
+blocking a todo (usually none, so usually zero work). For each, check
+`gh pr view <pr_url> --json state -q .state`; if `MERGED`, run `punch update <id>
+--merged`. That unblocks its dependents. (Marking a task `done` does NOT unblock
+dependents — only a real merge does. Never scan all done tasks.)
 
 ## Each iteration
 

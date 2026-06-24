@@ -79,6 +79,12 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 		writeJSON(w, http.StatusOK, tasks[0])
 	})
 
+	// GET /api/pending-merges lists the done-but-unmerged tasks that are blocking a
+	// todo via depends_on — exactly the PRs the loop should check for merge.
+	mux.HandleFunc("GET /api/pending-merges", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, s.PendingMerges())
+	})
+
 	// POST /api/cancel-all is the kill-switch: cancel every in_progress task.
 	mux.HandleFunc("POST /api/cancel-all", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]int{"cancelled": s.CancelInProgress()})

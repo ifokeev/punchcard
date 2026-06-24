@@ -171,6 +171,33 @@ func TestDependencyGating(t *testing.T) {
 	}
 }
 
+func TestPendingMerges(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.now = fixedClock()
+	done := StatusDone
+	pr := "http://pr"
+	mg := true
+
+	a, _ := s.Create(TaskInput{Title: "A"})                     // blocks B; will be done+unmerged → pending
+	s.Create(TaskInput{Title: "B", DependsOn: []string{a.ID}})  // todo, waits on A
+	c, _ := s.Create(TaskInput{Title: "C"})                     // done+unmerged but nothing depends on it
+	d, _ := s.Create(TaskInput{Title: "D"})                     // blocks E; already merged → not pending
+	s.Create(TaskInput{Title: "E", DependsOn: []string{d.ID}})  // todo, waits on D
+
+	s.Patch(a.ID, Patch{Status: &done, PRURL: &pr})            // A: done, PR, unmerged, blocks B
+	s.Patch(c.ID, Patch{Status: &done, PRURL: &pr})            // C: done but unreferenced
+	s.Patch(d.ID, Patch{Status: &done, PRURL: &pr, Merged: &mg}) // D: already merged
+
+	pend := s.PendingMerges()
+	if len(pend) != 1 || pend[0].ID != a.ID {
+		ids := make([]string, len(pend))
+		for i, p := range pend {
+			ids[i] = p.ID
+		}
+		t.Fatalf("PendingMerges = %v, want only [%s] (C unreferenced, D already merged)", ids, a.ID)
+	}
+}
+
 func TestUnknownDependencyBlocks(t *testing.T) {
 	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
 	s.now = fixedClock()

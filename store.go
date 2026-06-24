@@ -304,6 +304,31 @@ func (s *Store) List() []*Task {
 	return out
 }
 
+// PendingMerges returns exactly the tasks whose merge status is worth checking:
+// `done`, not yet `merged`, with a PR, AND blocking at least one todo task via
+// depends_on. This is the minimal set the loop reconciles each tick — usually
+// empty, never "all done tasks".
+func (s *Store) PendingMerges() []*Task {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	blocking := map[string]bool{}
+	for _, t := range s.tasks {
+		if t.Status == StatusTodo {
+			for _, id := range t.DependsOn {
+				blocking[id] = true
+			}
+		}
+	}
+	out := make([]*Task, 0, len(blocking))
+	for id := range blocking {
+		if d, ok := s.tasks[id]; ok && d.Status == StatusDone && !d.Merged && d.PRURL != "" {
+			out = append(out, d)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
 func (s *Store) Create(in TaskInput) (*Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

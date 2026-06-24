@@ -8,12 +8,11 @@ contract (subagent dispatch, inline review, proof capture, memory, failure handl
 Loop until the queue is drained:
 
 1. **Unblock dependents (reconcile merges).** Tasks may declare `depends_on` and the
-   server won't hand them out until those dependencies have **merged**. So first run
-   `punch list` and, for any task that is `done` with a `pr_url` *and* appears in some
-   todo task's `depends_on`, check whether its PR landed:
-   `gh pr view <pr_url> --json state -q .state` → if `MERGED`, run
-   `punch update <dep_id> --merged`. This is what lets a blocked task become claimable.
-   (Only check deps that are actually blocking something — keep it cheap.)
+   server won't hand them out until those dependencies have **merged**. Run
+   `punch pending-merges` — it returns ONLY the done-but-unmerged tasks that are actually
+   blocking a todo (usually an empty list, so usually zero work). For each, check whether
+   its PR landed: `gh pr view <pr_url> --json state -q .state` → if `MERGED`, run
+   `punch update <id> --merged`. That unblocks its dependents. Never scan all done tasks.
 2. `punch next --batch` → claims up to the server's **concurrency** limit and prints a
    JSON **array** of tasks (each: `id`, `title`, `description`, `acceptance`, `repo`).
    Blocked tasks (unmerged dependencies) are simply not returned.
