@@ -1,6 +1,9 @@
 # Local planning artifacts (specs, plans) — kept out of the repo
 docs/superpowers/
 
+# macOS
+.DS_Store
+
 # Build artifacts
 /punch
 /punchcard
