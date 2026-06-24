@@ -15,6 +15,16 @@ make release               # cross-compile dist/ binaries (optional)
 ```
 Run it: `./punch serve`, then open <http://127.0.0.1:8080>.
 
+**Fast dev setup — and update:** `make dev` builds + installs the `punch` binary and
+**symlinks** the Claude Code skills + `/punch-loop` into `~/.claude` (so repo edits
+apply live). Re-run it any time to rebuild/refresh. Then run `/reload-plugins` in
+Claude Code.
+```bash
+make dev                                  # install into $(go env GOPATH)/bin + ~/.claude
+make dev BINDIR=/usr/local/bin            # override the binary location (must be on PATH)
+make dev-uninstall                        # remove the binary + linked skills/command
+```
+
 ## Ground rules
 - **Stdlib only.** No new Go modules — if you reach for a dependency, stop; the
   stdlib almost certainly covers it. The single static `CGO_ENABLED=0` binary is the
