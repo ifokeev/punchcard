@@ -6,13 +6,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("usage: punch <serve|add|next|update|attach|list|get|rm|memory|config> [flags]")
+		fmt.Println("usage: punch <serve|add|next|update|attach|cancel|list|get|rm|pause|resume|concurrency|memory|config> [flags]")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
@@ -26,12 +27,20 @@ func main() {
 		cmdUpdate(os.Args[2:])
 	case "attach":
 		cmdAttach(os.Args[2:])
+	case "cancel":
+		cmdCancel(os.Args[2:])
 	case "list":
 		cmdList(os.Args[2:])
 	case "get":
 		cmdGet(os.Args[2:])
 	case "rm":
 		cmdRm(os.Args[2:])
+	case "pause":
+		cmdPause(true)
+	case "resume":
+		cmdPause(false)
+	case "concurrency":
+		cmdConcurrency(os.Args[2:])
 	case "memory":
 		cmdMemory(os.Args[2:])
 	case "config":
@@ -47,6 +56,7 @@ func cmdServe(args []string) {
 	token := fs.String("token", "", "bearer token (auth off if empty)")
 	store := fs.String("store", "tasks.json", "path to tasks.json")
 	memory := fs.String("memory", "memory.json", "path to memory.json")
+	control := fs.String("control", "control.json", "path to control.json")
 	originBase := fs.String("public-url", "", "public origin for absolute artifact URLs (optional)")
 	trustedProxy := fs.Bool("trusted-proxy", false, "honor X-Forwarded-* (only behind a trusted proxy)")
 	insecure := fs.Bool("insecure", false, "allow non-loopback bind without a token")
@@ -69,7 +79,12 @@ func cmdServe(args []string) {
 		fail("memory store: %v", err)
 	}
 
-	var h http.Handler = newMux(s, ms, *originBase)
+	cstore, err := NewControlStore(*control)
+	if err != nil {
+		fail("control store: %v", err)
+	}
+
+	var h http.Handler = newMux(s, ms, cstore, *originBase)
 	h = proxyMiddleware(*trustedProxy)(h)
 	h = tokenMiddleware(*token)(h)
 	log.Printf("punchcard serving on %s (auth=%v)", *addr, *token != "")
@@ -97,27 +112,89 @@ func cmdAdd(args []string) {
 }
 
 func cmdNext(args []string) {
-	code, body, err := doJSON("POST", "/api/next", nil)
+	fs := flag.NewFlagSet("next", flag.ExitOnError)
+	batch := fs.Bool("batch", false, "claim up to the server's concurrency limit (returns a JSON array)")
+	fs.Parse(args)
+	path := "/api/next"
+	if *batch {
+		path += "?batch=1"
+	}
+	code, body, err := doJSON("POST", path, nil)
 	if err != nil {
 		fail("next: %v", err)
 	}
-	if code == http.StatusNoContent {
-		os.Exit(3) // distinct exit code => loop knows the queue is drained
+	switch code {
+	case http.StatusNoContent:
+		os.Exit(3) // queue drained => loop stops
+	case http.StatusLocked:
+		os.Exit(4) // paused => loop should idle and re-check, NOT stop
+	}
+	fmt.Println(string(body))
+}
+
+// cmdCancel requests cancellation: a running task's subagent aborts at its next
+// checkpoint. `punch cancel <id>` cancels one; `punch cancel --all` is the
+// kill-switch that cancels every in_progress task at once.
+func cmdCancel(args []string) {
+	if len(args) >= 1 && args[0] == "--all" {
+		code, body, err := doJSON("POST", "/api/cancel-all", nil)
+		if err != nil || code != http.StatusOK {
+			fail("cancel --all failed (%d): %s %v", code, body, err)
+		}
+		fmt.Println(string(body))
+		return
+	}
+	if len(args) < 1 {
+		fail("usage: punch cancel <id> | punch cancel --all")
+	}
+	code, body, err := doJSON("PATCH", "/api/tasks/"+args[0], map[string]any{"status": string(StatusCancelled)})
+	if err != nil || code != http.StatusOK {
+		fail("cancel failed (%d): %s %v", code, body, err)
+	}
+	fmt.Println(string(body))
+}
+
+func cmdPause(paused bool) {
+	code, body, err := doJSON("PATCH", "/api/control", map[string]any{"paused": paused})
+	if err != nil || code != http.StatusOK {
+		fail("control failed (%d): %s %v", code, body, err)
+	}
+	fmt.Println(string(body))
+}
+
+// cmdConcurrency with no arg prints current control state; with N sets the
+// concurrency (engineer subagents allowed to run at once).
+func cmdConcurrency(args []string) {
+	if len(args) == 0 {
+		code, body, err := doJSON("GET", "/api/control", nil)
+		if err != nil || code != http.StatusOK {
+			fail("control failed (%d): %v", code, err)
+		}
+		fmt.Println(string(body))
+		return
+	}
+	n, err := strconv.Atoi(args[0])
+	if err != nil || n < 1 {
+		fail("usage: punch concurrency [N>=1]")
+	}
+	code, body, e := doJSON("PATCH", "/api/control", map[string]any{"concurrency": n})
+	if e != nil || code != http.StatusOK {
+		fail("control failed (%d): %s %v", code, body, e)
 	}
 	fmt.Println(string(body))
 }
 
 func cmdUpdate(args []string) {
+	if len(args) < 1 {
+		fail("usage: punch update <id> [--status ...] [--pr ...] [--branch ...] [--note ...]")
+	}
+	id := args[0] // id is positional-first; flags follow (Go's flag pkg stops at the first non-flag)
 	fs := flag.NewFlagSet("update", flag.ExitOnError)
 	status := fs.String("status", "", "status")
 	pr := fs.String("pr", "", "pr url")
 	branch := fs.String("branch", "", "branch")
 	note := fs.String("note", "", "note")
-	fs.Parse(args)
-	rest := fs.Args()
-	if len(rest) < 1 {
-		fail("usage: punch update <id> [--status ...] [--pr ...] [--branch ...] [--note ...]")
-	}
+	fs.Parse(args[1:])
 	payload := map[string]any{}
 	if *status != "" {
 		payload["status"] = *status
@@ -131,7 +208,7 @@ func cmdUpdate(args []string) {
 	if *note != "" {
 		payload["note"] = *note
 	}
-	code, body, err := doJSON("PATCH", "/api/tasks/"+rest[0], payload)
+	code, body, err := doJSON("PATCH", "/api/tasks/"+id, payload)
 	if err != nil || code != http.StatusOK {
 		fail("update failed (%d): %s %v", code, body, err)
 	}
@@ -242,14 +319,13 @@ func cmdMemoryAdd(args []string) {
 }
 
 func cmdMemorySearch(args []string) {
-	fs := flag.NewFlagSet("memory search", flag.ExitOnError)
-	repo := fs.String("repo", "", "filter by repo (optional)")
-	fs.Parse(args)
-	rest := fs.Args()
-	if len(rest) < 1 {
+	if len(args) < 1 {
 		fail("usage: punch memory search <query> [--repo ...]")
 	}
-	q := rest[0]
+	q := args[0] // query is positional-first; --repo follows
+	fs := flag.NewFlagSet("memory search", flag.ExitOnError)
+	repo := fs.String("repo", "", "filter by repo (optional)")
+	fs.Parse(args[1:])
 	path := "/api/memory?q=" + urlEncode(q)
 	if *repo != "" {
 		path += "&repo=" + urlEncode(*repo)

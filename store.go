@@ -21,6 +21,7 @@ const (
 	StatusDone       Status = "done"
 	StatusBlocked    Status = "blocked"
 	StatusFailed     Status = "failed"
+	StatusCancelled  Status = "cancelled"
 )
 
 type Task struct {
@@ -125,9 +126,25 @@ func (s *Store) Get(id string) (*Task, bool) {
 }
 
 // Claim atomically selects and flips the next todo task to in_progress.
+// It is the raw, ceiling-free primitive; the HTTP layer enforces concurrency
+// via ClaimBatch.
 func (s *Store) Claim() (*Task, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	t := s.claimBest()
+	if t == nil {
+		return nil, false
+	}
+	if err := s.save(); err != nil {
+		t.Status = StatusTodo // roll back the flip on flush failure
+		return nil, false
+	}
+	return t, true
+}
+
+// claimBest flips the single best todo task to in_progress and returns it
+// (nil if none). Caller holds s.mu and is responsible for save().
+func (s *Store) claimBest() *Task {
 	var best *Task
 	for _, t := range s.tasks {
 		if t.Status != StatusTodo {
@@ -138,15 +155,48 @@ func (s *Store) Claim() (*Task, bool) {
 		}
 	}
 	if best == nil {
-		return nil, false
+		return nil
 	}
 	best.Status = StatusInProgress
 	best.UpdatedAt = s.now()
-	if err := s.save(); err != nil {
-		best.Status = StatusTodo // roll back the flip on flush failure
-		return nil, false
+	return best
+}
+
+// ClaimBatch claims up to `want` best todo tasks in priority order, but never
+// lets the number of in_progress tasks exceed `ceiling`. That makes concurrency
+// a HARD cap on how many tasks run at once — no more than `ceiling` are ever
+// in_progress, regardless of how (or how often) the loop calls it.
+func (s *Store) ClaimBatch(ceiling, want int) []*Task {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	inProgress := 0
+	for _, t := range s.tasks {
+		if t.Status == StatusInProgress {
+			inProgress++
+		}
 	}
-	return best, true
+	slots := ceiling - inProgress // free concurrency slots right now
+	if want < slots {
+		slots = want
+	}
+	var claimed []*Task
+	for len(claimed) < slots {
+		t := s.claimBest()
+		if t == nil {
+			break // queue drained
+		}
+		claimed = append(claimed, t)
+	}
+	if len(claimed) == 0 {
+		return nil
+	}
+	if err := s.save(); err != nil {
+		for _, t := range claimed { // roll back every flip on flush failure
+			t.Status = StatusTodo
+		}
+		return nil
+	}
+	return claimed
 }
 
 // better reports whether a should be claimed before b.
@@ -254,6 +304,35 @@ func (s *Store) DeleteTask(id string) error {
 		return err
 	}
 	return nil
+}
+
+// CancelInProgress flips every in_progress task to cancelled and returns the
+// count — the kill-switch for work already running. Owning subagents see the
+// status change at their next checkpoint and abort cleanly.
+func (s *Store) CancelInProgress() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	saved := map[string]Status{}
+	var changed []*Task
+	for _, t := range s.tasks {
+		if t.Status == StatusInProgress {
+			saved[t.ID] = t.Status
+			t.Status = StatusCancelled
+			t.UpdatedAt = now
+			changed = append(changed, t)
+		}
+	}
+	if len(changed) == 0 {
+		return 0
+	}
+	if err := s.save(); err != nil {
+		for _, t := range changed {
+			t.Status = saved[t.ID]
+		}
+		return 0
+	}
+	return len(changed)
 }
 
 func (s *Store) SweepStuck(maxAge time.Duration) int {

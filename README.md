@@ -47,6 +47,23 @@ The binary is only half of it — the agents are driven by a Claude Code **plugi
 
 Open the board and watch tasks slide from todo → done in real time.
 
+## Control the run
+Steer the loop from the **board** (or the `punch` CLI) without touching the agent
+session — handy when the loop runs somewhere you can't reach:
+
+| Action | Board | CLI |
+|---|---|---|
+| Cap how many agents run at once | **agents −/+** | `punch concurrency 3` |
+| Pause / resume claiming | **Pause** / **Resume** | `punch pause` · `punch resume` |
+| Cancel one running task | **Cancel run** on the card | `punch cancel <id>` |
+| Kill-switch: pause + cancel every run | **Stop all** | `punch pause && punch cancel --all` |
+
+Concurrency is a **hard cap** — the server never lets more than that many tasks be in
+progress at once (default **3**; seed a different default with `PUNCH_CONCURRENCY`).
+**Pausing makes the loop idle** and it resumes when you un-pause from the board (no
+terminal access needed); **cancelling** makes the owning agent abort at its next
+checkpoint and moves the task to *Cancelled*.
+
 ## Make it remote (pick one)
 | Tier | How |
 |---|---|

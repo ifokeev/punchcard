@@ -37,7 +37,7 @@ make dev-uninstall                        # remove the binary + linked skills/co
 
 ## Project layout
 ```
-*.go                       the binary: store, server, API, CLI, uploads, memory, config
+*.go                       the binary: store, server, API, CLI, uploads, memory, config, run-control
 board.html                 the embedded board UI
 skills/                    Claude Code PM + Engineer skills
 commands/punch-loop.md     the /punch-loop command

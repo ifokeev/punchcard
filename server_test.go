@@ -14,7 +14,8 @@ func newTestServer(t *testing.T) http.Handler {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "tasks.json"))
 	ms, _ := NewMemoryStore(filepath.Join(dir, "memory.json"))
-	return newMux(s, ms, "")
+	cs, _ := NewControlStore(filepath.Join(dir, "control.json"))
+	return newMux(s, ms, cs, "")
 }
 
 func TestCreateAndListViaAPI(t *testing.T) {
@@ -61,6 +62,79 @@ func TestNextReturnsIDThenEmpty(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/next", nil))
 	if rec.Code != http.StatusNoContent { // drained queue
 		t.Fatalf("want 204 on empty, got %d", rec.Code)
+	}
+}
+
+func TestControlAndPauseViaAPI(t *testing.T) {
+	h := newTestServer(t)
+
+	// Default control: not paused, concurrency 3.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/control", nil))
+	var ctl Control
+	json.Unmarshal(rec.Body.Bytes(), &ctl)
+	if ctl.Paused || ctl.Concurrency != 3 {
+		t.Fatalf("default control = %+v, want {false 3}", ctl)
+	}
+
+	// Pause: claiming must report 423, not hand out work.
+	body, _ := json.Marshal(map[string]any{"title": "t"})
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/api/tasks", bytes.NewReader(body)))
+
+	patch, _ := json.Marshal(map[string]any{"paused": true})
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("PATCH", "/api/control", bytes.NewReader(patch)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pause patch status=%d", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/next", nil))
+	if rec.Code != http.StatusLocked {
+		t.Fatalf("paused next: want 423, got %d", rec.Code)
+	}
+
+	// Resume: the queued task is now claimable.
+	patch, _ = json.Marshal(map[string]any{"paused": false})
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("PATCH", "/api/control", bytes.NewReader(patch)))
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/next", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resumed next: want 200, got %d", rec.Code)
+	}
+
+	// Concurrency clamps to >=1.
+	patch, _ = json.Marshal(map[string]any{"concurrency": 0})
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("PATCH", "/api/control", bytes.NewReader(patch)))
+	json.Unmarshal(rec.Body.Bytes(), &ctl)
+	if ctl.Concurrency != 1 {
+		t.Fatalf("concurrency clamp: want 1, got %d", ctl.Concurrency)
+	}
+}
+
+func TestBatchClaimViaAPI(t *testing.T) {
+	h := newTestServer(t)
+	// concurrency 2, three todos => batch returns exactly 2.
+	patch, _ := json.Marshal(map[string]any{"concurrency": 2})
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("PATCH", "/api/control", bytes.NewReader(patch)))
+	for i := 0; i < 3; i++ {
+		body, _ := json.Marshal(map[string]any{"title": "t", "priority": i})
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/api/tasks", bytes.NewReader(body)))
+	}
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/next?batch=1", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("batch status=%d", rec.Code)
+	}
+	var batch []Task
+	json.Unmarshal(rec.Body.Bytes(), &batch)
+	if len(batch) != 2 {
+		t.Fatalf("batch size = %d, want 2", len(batch))
+	}
+	if batch[0].Priority < batch[1].Priority {
+		t.Fatalf("batch not in priority order: %+v", batch)
 	}
 }
 

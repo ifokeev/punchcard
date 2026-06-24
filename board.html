@@ -9,7 +9,7 @@
   --ink:#1a1a1a;--sec:#555;--mut:#8a8a8a;--faint:#b3b3b3;
   --line:rgba(0,0,0,.10);--accent:#2563eb;
   --c-todo:#b3b3b3;--c-in_progress:#e0b13a;--c-in_review:#5e6ad2;
-  --c-done:#3fa66a;--c-blocked:#e08338;--c-failed:#df524d;
+  --c-done:#3fa66a;--c-blocked:#e08338;--c-failed:#df524d;--c-cancelled:#9a9a9a;
  }
  *{box-sizing:border-box}
  body{margin:0;background:#fff;color:var(--ink);
@@ -20,7 +20,16 @@
  .bar b{font-size:21px;font-weight:700;letter-spacing:-.02em}
  .bar span{font-size:14px;color:rgba(255,255,255,.5)}
  .wrap{max-width:1320px;margin:0 auto;padding:28px}
- .addrow{margin-bottom:28px}
+ .addrow{margin-bottom:28px;display:flex;align-items:center;gap:12px}
+ .ctl{margin-left:auto;display:flex;align-items:center;gap:12px}
+ #pausebtn.paused{border-color:var(--c-in_progress);color:#a87908}
+ .ghost.danger{color:var(--c-failed)}
+ .ghost.danger:hover{border-color:var(--c-failed)}
+ .conc{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--line);border-radius:8px;padding:0 6px 0 12px;
+  font-size:13px;font-weight:600;color:var(--mut);white-space:nowrap}
+ .conc b{min-width:18px;text-align:center;color:var(--ink);font-size:15px;padding:0 4px}
+ .step{font-family:inherit;font-size:16px;line-height:1;color:var(--mut);background:none;border:none;cursor:pointer;padding:8px 8px}
+ .step:hover{color:var(--ink)}
  .ghost{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;
   font-family:inherit;font-size:15px;font-weight:600;color:var(--ink);background:#fff;
   border:1px solid var(--line);padding:10px 16px;cursor:pointer;border-radius:8px;transition:border-color .15s}
@@ -42,7 +51,7 @@
  .more:hover{color:var(--ink)}
  .details{display:grid;gap:10px;margin-top:14px;max-width:760px}
  .details[hidden]{display:none}
- .cols{display:grid;grid-template-columns:repeat(6,1fr);gap:16px}
+ .cols{display:grid;grid-template-columns:repeat(7,1fr);gap:16px}
  @media(max-width:1180px){.cols{grid-template-columns:repeat(3,1fr)}}
  @media(max-width:700px){.cols{grid-template-columns:repeat(2,1fr)}}
  .col>h2{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;letter-spacing:.01em;
@@ -51,13 +60,16 @@
  .col>h2 .ct{margin-left:auto;font-size:14px;color:var(--faint);font-weight:500}
  .dot-todo{background:var(--c-todo)}.dot-in_progress{background:var(--c-in_progress)}
  .dot-in_review{background:var(--c-in_review)}.dot-done{background:var(--c-done)}
- .dot-blocked{background:var(--c-blocked)}.dot-failed{background:var(--c-failed)}
+ .dot-blocked{background:var(--c-blocked)}.dot-failed{background:var(--c-failed)}.dot-cancelled{background:var(--c-cancelled)}
  .card{position:relative;border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:10px;background:#fff;transition:border-color .15s}
  .card:hover{border-color:rgba(0,0,0,.2)}
  .card .t{font-size:16px;font-weight:600;line-height:1.32;letter-spacing:-.006em;margin-bottom:9px;padding-right:20px}
  .card .del{position:absolute;top:10px;right:10px;background:none;border:none;padding:0;cursor:pointer;font-size:16px;line-height:1;color:var(--faint);transition:color .15s}
  .card .del:hover{color:var(--ink)}
  .card .m{font-size:14px;color:var(--mut)}
+ .card .cancel{margin-top:10px;font-family:inherit;font-size:12px;font-weight:600;color:var(--c-failed);
+  background:none;border:1px solid var(--line);border-radius:7px;padding:5px 11px;cursor:pointer}
+ .card .cancel:hover{border-color:var(--c-failed)}
  .card .pr{display:inline-block;margin-top:10px;font-size:15px;color:var(--accent);text-decoration:none}
  .card .pr:hover{text-decoration:underline}
  .card img,.card video{display:block;width:100%;margin-top:12px;border:1px solid var(--line);border-radius:6px}
@@ -70,7 +82,14 @@
 <body>
 <div class="bar"><b>punchcard</b><span>watch your AI coding agents ship</span></div>
 <div class="wrap">
-<div class="addrow"><button type="button" id="newbtn" class="ghost"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2v11.6M2.2 8h11.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>New task</button></div>
+<div class="addrow">
+ <button type="button" id="newbtn" class="ghost"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2v11.6M2.2 8h11.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>New task</button>
+ <span class="ctl">
+  <button type="button" id="stopbtn" class="ghost danger" onclick="stopAll()" title="Pause the board and cancel every in-progress run">&#9209; Stop all</button>
+  <button type="button" id="pausebtn" class="ghost">&#9208; Pause</button>
+  <span class="conc" title="Max engineer agents running at once">agents<button type="button" class="step" onclick="setConc(-1)">&minus;</button><b id="concval" class="mono">3</b><button type="button" class="step" onclick="setConc(1)">+</button></span>
+ </span>
+</div>
 <form id="f" hidden>
  <div class="qa">
   <input name="title" placeholder="What should your agents build?" required>
@@ -87,8 +106,8 @@
 <div class="cols" id="board"></div>
 </div>
 <script>
-const LABELS={todo:"Todo",in_progress:"In Progress",in_review:"In Review",done:"Done",blocked:"Blocked",failed:"Failed"};
-const COLS=["todo","in_progress","in_review","done","blocked","failed"];
+const LABELS={todo:"Todo",in_progress:"In Progress",in_review:"In Review",done:"Done",blocked:"Blocked",failed:"Failed",cancelled:"Cancelled"};
+const COLS=["todo","in_progress","in_review","done","blocked","failed","cancelled"];
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const CAP=20, lim={};
 async function load(){
@@ -104,6 +123,7 @@ async function load(){
   for(const t of items){
    let h='<div class="card"><button class="del" onclick="delTask(\''+esc(t.id)+'\')" title="Delete">&times;</button><div class="t">'+esc(t.title)+'</div>';
    h+='<div class="m mono">'+esc(t.id)+' &middot; P'+(t.priority||0)+'</div>';
+   if(t.status==='in_progress') h+='<button class="cancel" onclick="cancelTask(\''+esc(t.id)+'\')">Cancel run</button>';
    if(t.pr_url) h+='<a class="pr" href="'+esc(t.pr_url)+'" target="_blank" rel="noopener noreferrer">View PR &rarr;</a>';
    for(const a of (t.artifacts||[])){
     const src=a.replace("/artifacts/","/preview/");
@@ -131,6 +151,31 @@ document.getElementById("f").onsubmit=async e=>{
  load();
 };
 async function delTask(id){ if(!confirm('Delete this task?')) return; await fetch('/api/tasks/'+encodeURIComponent(id),{method:'DELETE'}); load(); }
-load(); setInterval(load,2000);
+async function cancelTask(id){ if(!confirm('Cancel this run? The agent stops at its next checkpoint and the task moves to Cancelled.')) return; await fetch('/api/tasks/'+encodeURIComponent(id),{method:'PATCH',headers:{"Content-Type":"application/json"},body:JSON.stringify({status:'cancelled'})}); load(); }
+
+// --- run control: pause/resume + concurrency, mirrored from the server ---
+let ctl={paused:false,concurrency:3};
+async function loadControl(){
+ try{ ctl=await (await fetch("/api/control")).json(); }catch(e){ return; }
+ document.getElementById("concval").textContent=ctl.concurrency;
+ const b=document.getElementById("pausebtn");
+ b.innerHTML=ctl.paused?"&#9654; Resume":"&#9208; Pause";
+ b.classList.toggle("paused",ctl.paused);
+}
+async function patchControl(body){
+ await fetch("/api/control",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+ loadControl();
+}
+function togglePause(){ patchControl({paused:!ctl.paused}); }
+function setConc(d){ patchControl({concurrency:Math.max(1,(ctl.concurrency||3)+d)}); }
+async function stopAll(){
+ if(!confirm('Stop all runs? This pauses the board and cancels every in-progress task (each agent aborts at its next checkpoint).')) return;
+ await fetch("/api/control",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({paused:true})});
+ await fetch("/api/cancel-all",{method:"POST"});
+ loadControl(); load();
+}
+document.getElementById("pausebtn").onclick=togglePause;
+
+loadControl(); load(); setInterval(()=>{loadControl();load();},2000);
 </script>
 </body></html>

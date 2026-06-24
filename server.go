@@ -13,7 +13,7 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 // newMux wires the API. originBase, when non-empty, overrides the public origin for
 // absolute upload URLs (see upload.go); the board uses relative paths regardless.
-func newMux(s *Store, ms *MemoryStore, originBase string) *http.ServeMux {
+func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/tasks", func(w http.ResponseWriter, r *http.Request) {
@@ -50,13 +50,58 @@ func newMux(s *Store, ms *MemoryStore, originBase string) *http.ServeMux {
 		writeJSON(w, http.StatusOK, t)
 	})
 
+	// POST /api/next claims work for the loop.
+	//   paused        -> 423 Locked (loop should idle, not stop)
+	//   ?batch=1      -> up to `concurrency` tasks as a JSON array (204 if none)
+	//   (no batch)    -> a single task object (204 if none) — back-compat
 	mux.HandleFunc("POST /api/next", func(w http.ResponseWriter, r *http.Request) {
-		t, ok := s.Claim()
-		if !ok {
+		if cs.Get().Paused {
+			writeJSON(w, http.StatusLocked, map[string]string{"status": "paused"})
+			return
+		}
+		ceiling := cs.Get().Concurrency
+		if r.URL.Query().Get("batch") != "" {
+			tasks := s.ClaimBatch(ceiling, ceiling)
+			if len(tasks) == 0 {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			writeJSON(w, http.StatusOK, tasks)
+			return
+		}
+		// Single claim still respects the concurrency ceiling.
+		tasks := s.ClaimBatch(ceiling, 1)
+		if len(tasks) == 0 {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		writeJSON(w, http.StatusOK, t)
+		writeJSON(w, http.StatusOK, tasks[0])
+	})
+
+	// POST /api/cancel-all is the kill-switch: cancel every in_progress task.
+	mux.HandleFunc("POST /api/cancel-all", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]int{"cancelled": s.CancelInProgress()})
+	})
+
+	mux.HandleFunc("GET /api/control", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, cs.Get())
+	})
+
+	mux.HandleFunc("PATCH /api/control", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Paused      *bool `json:"paused"`
+			Concurrency *int  `json:"concurrency"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		ctl, err := cs.Patch(in.Paused, in.Concurrency)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, ctl)
 	})
 
 	mux.HandleFunc("PATCH /api/tasks/{id}", func(w http.ResponseWriter, r *http.Request) {

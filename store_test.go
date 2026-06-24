@@ -62,6 +62,54 @@ func TestClaimOrdering(t *testing.T) {
 	}
 }
 
+func TestClaimBatch(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.now = fixedClock()
+	s.Create(TaskInput{Title: "p1", Priority: 1})
+	s.Create(TaskInput{Title: "p9", Priority: 9})
+	s.Create(TaskInput{Title: "p5", Priority: 5})
+
+	// High ceiling, want 2 -> two highest priorities in order.
+	batch := s.ClaimBatch(99, 2)
+	if len(batch) != 2 {
+		t.Fatalf("want 2 claimed, got %d", len(batch))
+	}
+	if batch[0].Priority != 9 || batch[1].Priority != 5 {
+		t.Fatalf("batch not in priority order: %d,%d", batch[0].Priority, batch[1].Priority)
+	}
+	for _, tk := range batch {
+		if tk.Status != StatusInProgress {
+			t.Fatalf("claimed task not in_progress: %+v", tk)
+		}
+	}
+
+	// Only one todo left: asking for 3 returns just it.
+	rest := s.ClaimBatch(99, 3)
+	if len(rest) != 1 || rest[0].Priority != 1 {
+		t.Fatalf("want 1 remaining (p1), got %+v", rest)
+	}
+	// Drained: nil.
+	if got := s.ClaimBatch(99, 2); got != nil {
+		t.Fatalf("want nil on drained queue, got %+v", got)
+	}
+}
+
+func TestClaimBatchCeiling(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.now = fixedClock()
+	for i := 0; i < 5; i++ {
+		s.Create(TaskInput{Title: "t", Priority: 1})
+	}
+	// Ceiling 3: first batch claims 3.
+	if got := s.ClaimBatch(3, 3); len(got) != 3 {
+		t.Fatalf("first batch = %d, want 3", len(got))
+	}
+	// 3 already in_progress, ceiling 3 -> no free slots, nil even though 2 todos remain.
+	if got := s.ClaimBatch(3, 3); got != nil {
+		t.Fatalf("at capacity should claim nothing, got %d", len(got))
+	}
+}
+
 func TestClaimAtomicNoDoubleClaim(t *testing.T) {
 	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
 	for i := 0; i < 50; i++ {
@@ -93,6 +141,37 @@ func TestClaimAtomicNoDoubleClaim(t *testing.T) {
 	}
 	if len(seen) != 50 {
 		t.Fatalf("claimed %d tasks, want 50", len(seen))
+	}
+}
+
+func TestCancelInProgress(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.now = fixedClock()
+	for i := 0; i < 4; i++ {
+		s.Create(TaskInput{Title: "t", Priority: 1})
+	}
+	s.ClaimBatch(99, 2) // two -> in_progress, two stay todo
+
+	if n := s.CancelInProgress(); n != 2 {
+		t.Fatalf("cancelled %d, want 2", n)
+	}
+	var inProgress, cancelled, todo int
+	for _, tk := range s.List() {
+		switch tk.Status {
+		case StatusInProgress:
+			inProgress++
+		case StatusCancelled:
+			cancelled++
+		case StatusTodo:
+			todo++
+		}
+	}
+	if inProgress != 0 || cancelled != 2 || todo != 2 {
+		t.Fatalf("after kill-switch: in_progress=%d cancelled=%d todo=%d", inProgress, cancelled, todo)
+	}
+	// Idempotent: nothing in_progress -> 0.
+	if n := s.CancelInProgress(); n != 0 {
+		t.Fatalf("second cancel-all = %d, want 0", n)
 	}
 }
 

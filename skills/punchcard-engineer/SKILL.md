@@ -10,22 +10,30 @@ description: Use in the worker session (driven by /loop) to execute punchcard ta
 > env vars override the config file when set.
 
 You are the Engineer half of a two-role AI team, driven by `/loop`. The loop session
-stays THIN — it claims a task, dispatches a fresh subagent to do the work, records a
-one-line result, and continues. Keeping the heavy work in a disposable subagent is
-what gives each task a fresh, bounded context (the `/loop` session itself
-accumulates; the subagent does not).
+stays THIN — it claims a **batch** of tasks, dispatches one fresh subagent per task to
+do the work in parallel, records one-line results, and continues. Keeping the heavy work
+in disposable subagents is what gives each task a fresh, bounded context (the `/loop`
+session itself accumulates; the subagents do not).
+
+**Concurrency is server-controlled.** `punch next --batch` hands you up to the board's
+concurrency limit (default 3, seeded by `PUNCH_CONCURRENCY`). The server never lets more
+than that many tasks be `in_progress` at once — so dispatch the whole batch in parallel
+and **wait for all of it to finish before claiming the next batch.**
 
 ## Each iteration
 
-1. **Claim:** run `punch next`.
+1. **Claim a batch:** run `punch next --batch` → a JSON **array** of tasks (each has
+   `id`, `title`, `description`, `acceptance`, `repo`).
    - Exit code 3 (empty/204) → the queue is drained → STOP the loop cleanly.
+   - Exit code 4 (paused/423) → the board is **paused** → do NOT stop: wait briefly and
+     re-check (`punch next --batch` again). Resume is controlled from the board.
    - **ONLY exit 3 stops the loop.** Any other nonzero exit (transport error, daemon
-     down) is transient → wait briefly and retry `punch next`; do NOT stop.
-   - On success, parse the returned JSON task (has `id`, `title`, `description`,
-     `acceptance`, `repo`).
+     down) is transient → wait briefly and retry; do NOT stop.
 
-2. **Dispatch a fresh subagent** with the task brief + this contract. The subagent
-   does steps 3–9 and returns ONE line: `id | branch | pr_url | proof_url | outcome`.
+2. **Dispatch one fresh subagent per task in the batch, in parallel** (issue them in a
+   single step), each with its task brief + this contract. Each subagent does steps 3–9
+   and returns ONE line: `id | branch | pr_url | proof_url | outcome`. **Wait for the
+   whole batch to return before step 1 again.**
 
 3. **(subagent) Isolate in a git worktree** — NEVER work in the shared/main working
    tree: it may be dirty or in use by another agent, and committing there sweeps in
@@ -39,6 +47,13 @@ accumulates; the subagent does not).
    ```
    Your branch now contains ONLY this task's changes, isolated from every other agent.
    Then recall context: `punch memory search "<topic/keywords>" --repo <repo>`.
+
+   **Cancellation checkpoints:** the board can cancel a running task. At each checkpoint
+   — right after claiming, and before committing, pushing, and attaching — run
+   `punch get <id>` and check `.status`. If it is no longer `in_progress` (it's
+   `cancelled`, or was swept to `failed`), **abort immediately**: stop work, remove your
+   worktree (step 9), and return outcome=`cancelled`. Do not push or open a PR for a
+   cancelled task.
 
 4. **(subagent) Implement** in the worktree to satisfy `acceptance`. Run the repo's
    tests. Commit with **Conventional Commits** (`feat:`, `fix:`, `refactor:`, `docs:`,
@@ -77,12 +92,13 @@ accumulates; the subagent does not).
    3–8, still remove the worktree and return `failed:`/`blocked: <reason>` (keep the PR
    URL if one exists).
 
-10. **(loop) Record state** from the subagent's summary:
+10. **(loop) Record state** from each subagent's summary (one per task in the batch):
     - mergeable success → `punch update <id> --pr <pr_url> --branch <branch> --status done`
     - blocked → `punch update <id> --status blocked --note "<reason>"`; failed →
       `punch update <id> --status failed --note "<reason>"`
-    - **Always continue.** One failed/blocked task never stops the loop — only a
-      drained queue does.
+    - `cancelled` → already `cancelled` on the board; leave it as-is.
+    - **Always continue.** A failed/blocked/cancelled task never stops the loop — only a
+      drained queue (exit 3) does; a paused board (exit 4) idles, it does not stop.
 
 ## Memory capture (at the `done` step)
 End each task by asking: *"did I learn anything durable a future task should know?"*
