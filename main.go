@@ -101,12 +101,20 @@ func cmdAdd(args []string) {
 	acc := fs.String("acceptance", "", "acceptance criteria")
 	repo := fs.String("repo", "", "local repo path")
 	prio := fs.Int("priority", 1, "priority (higher first)")
+	deps := fs.String("depends-on", "", "comma-separated task ids that must be merged before this is claimed")
 	fs.Parse(args)
 	if *title == "" {
 		fail("--title required")
 	}
+	var depList []string
+	for _, d := range strings.Split(*deps, ",") {
+		if d = strings.TrimSpace(d); d != "" {
+			depList = append(depList, d)
+		}
+	}
 	code, body, err := doJSON("POST", "/api/tasks", map[string]any{
-		"title": *title, "description": *desc, "acceptance": *acc, "repo": *repo, "priority": *prio,
+		"title": *title, "description": *desc, "acceptance": *acc, "repo": *repo,
+		"priority": *prio, "depends_on": depList,
 	})
 	if err != nil || code != http.StatusCreated {
 		fail("add failed (%d): %s %v", code, body, err)
@@ -207,7 +215,7 @@ func cmdConcurrency(args []string) {
 
 func cmdUpdate(args []string) {
 	if len(args) < 1 {
-		fail("usage: punch update <id> [--status ...] [--pr ...] [--branch ...] [--note ...]")
+		fail("usage: punch update <id> [--status ...] [--pr ...] [--branch ...] [--note ...] [--merged]")
 	}
 	id := args[0] // id is positional-first; flags follow (Go's flag pkg stops at the first non-flag)
 	fs := flag.NewFlagSet("update", flag.ExitOnError)
@@ -215,6 +223,7 @@ func cmdUpdate(args []string) {
 	pr := fs.String("pr", "", "pr url")
 	branch := fs.String("branch", "", "branch")
 	note := fs.String("note", "", "note")
+	merged := fs.Bool("merged", false, "mark this task's PR as merged (unblocks dependents)")
 	fs.Parse(args[1:])
 	payload := map[string]any{}
 	if *status != "" {
@@ -228,6 +237,9 @@ func cmdUpdate(args []string) {
 	}
 	if *note != "" {
 		payload["note"] = *note
+	}
+	if *merged {
+		payload["merged"] = true
 	}
 	code, body, err := doJSON("PATCH", "/api/tasks/"+id, payload)
 	if err != nil || code != http.StatusOK {

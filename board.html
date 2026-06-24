@@ -70,6 +70,8 @@
  .card .del{position:absolute;top:10px;right:10px;background:none;border:none;padding:0;cursor:pointer;font-size:16px;line-height:1;color:var(--faint);transition:color .15s}
  .card .del:hover{color:var(--ink)}
  .card .m{font-size:14px;color:var(--mut)}
+ .card .dep{margin-top:8px;font-size:12px;font-weight:600;color:var(--c-blocked)}
+ .card .merged{margin-top:8px;font-size:12px;font-weight:600;color:var(--c-done)}
  .card .cancel{margin-top:10px;font-family:inherit;font-size:12px;font-weight:600;color:var(--c-failed);
   background:none;border:1px solid var(--line);border-radius:7px;padding:5px 11px;cursor:pointer}
  .card .cancel:hover{border-color:var(--c-failed)}
@@ -150,6 +152,9 @@ async function load(){
   for(const t of items){
    let h='<div class="card" draggable="true" onclick="openCard(\''+esc(t.id)+'\')" ondragstart="dragStart(event,\''+esc(t.id)+'\')" ondragend="dragEnd(event)"><button class="del" onclick="event.stopPropagation();delTask(\''+esc(t.id)+'\')" title="Delete">&times;</button><div class="t">'+esc(t.title)+'</div>';
    h+='<div class="m mono">'+esc(t.id)+' &middot; P'+(t.priority||0)+'</div>';
+   const unmet=(t.depends_on||[]).filter(id=>!(tasksById[id]&&tasksById[id].merged));
+   if(t.status==='todo'&&unmet.length) h+='<div class="dep">waiting on '+unmet.map(esc).join(', ')+'</div>';
+   if(t.merged) h+='<div class="merged">&#10003; merged</div>';
    if(t.status==='in_progress') h+='<button class="cancel" onclick="event.stopPropagation();cancelTask(\''+esc(t.id)+'\')">Cancel run</button>';
    if(t.pr_url) h+='<a class="pr" href="'+esc(t.pr_url)+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">View PR &rarr;</a>';
    for(const a of (t.artifacts||[])){
@@ -202,10 +207,14 @@ function field(label,val,mono){
 }
 function openCard(id){
  const t=tasksById[id]; if(!t) return;
- let b='<div class="meta"><span class="dot dot-'+t.status+'"></span>'+LABELS[t.status]+' &middot; <span class="mono">'+esc(t.id)+'</span> &middot; P'+(t.priority||0)+'</div>';
+ let b='<div class="meta"><span class="dot dot-'+t.status+'"></span>'+LABELS[t.status]+' &middot; <span class="mono">'+esc(t.id)+'</span> &middot; P'+(t.priority||0)+(t.merged?' &middot; &#10003; merged':'')+'</div>';
  b+='<h2>'+esc(t.title)+'</h2>';
  b+=field('Description',t.description);
  b+=field('Acceptance criteria',t.acceptance);
+ if((t.depends_on||[]).length){
+  const lines=t.depends_on.map(id=>{const d=tasksById[id];return id+' — '+(!d?'unknown':d.merged?'merged':d.status);}).join('\n');
+  b+=field('Depends on',lines,true);
+ }
  if(t.repo) b+=field('Repo',t.repo,true);
  if(t.branch) b+=field('Branch',t.branch,true);
  if(t.pr_url) b+='<div class="field"><h3>Pull request</h3><div class="v"><a href="'+esc(t.pr_url)+'" target="_blank" rel="noopener noreferrer">'+esc(t.pr_url)+' &rarr;</a></div></div>';

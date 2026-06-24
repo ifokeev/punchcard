@@ -78,6 +78,17 @@ Now **Stop all** (or `punch stop`) halts the loop on its very next tool call. Th
 **opt-in** — it does nothing without that env var, so your other Claude sessions are
 untouched — and **fail-open**: if the board is unreachable it never blocks your work.
 
+## Task dependencies
+Need one task **merged** before another starts? Declare it:
+```bash
+punch add --title "API on the new schema" --depends-on t_0001
+punch add --title "Docs update" --depends-on t_0001,t_0002
+```
+The dependent sits in Todo (the board shows *waiting on t_0001*) and the loop won't claim
+it until that dependency's PR is **actually merged** — not just marked done. Each tick the
+loop reconciles real merge state with `gh` and flips merged dependencies, which unblocks
+the dependents. So you can file a whole chain up front and let it land in order.
+
 ## Make it remote (pick one)
 | Tier | How |
 |---|---|

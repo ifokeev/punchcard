@@ -22,10 +22,20 @@ concurrency limit (default 3, seeded by `PUNCH_CONCURRENCY`). The server never l
 than that many tasks be `in_progress` at once — so dispatch the whole batch in parallel
 and **wait for all of it to finish before claiming the next batch.**
 
+**Dependencies (merge-gating).** A task may declare `depends_on` (other task ids); the
+server won't hand it out until each of those has **merged**, and this loop is what marks
+them merged. So at the START of every iteration, *before* claiming, reconcile merges:
+run `punch list` and, for any task that is `done` with a `pr_url` *and* listed in some
+todo task's `depends_on`, check `gh pr view <pr_url> --json state -q .state`; if it's
+`MERGED`, run `punch update <dep_id> --merged`. That unblocks its dependents. (Marking a
+task `done` does NOT unblock dependents — only a real merge does. Only check deps that
+are blocking something.)
+
 ## Each iteration
 
-1. **Claim a batch:** run `punch next --batch` → a JSON **array** of tasks (each has
-   `id`, `title`, `description`, `acceptance`, `repo`).
+1. **Reconcile merges, then claim a batch:** do the dependency reconcile above, then run
+   `punch next --batch` → a JSON **array** of tasks (each has `id`, `title`,
+   `description`, `acceptance`, `repo`). Blocked tasks aren't returned.
    - Exit code 3 (empty/204) → the queue is drained → STOP the loop cleanly.
    - Exit code 4 (paused/423) → the board is **paused** → do NOT stop: wait briefly and
      re-check (`punch next --batch` again). Resume is controlled from the board.

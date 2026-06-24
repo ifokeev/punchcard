@@ -24,6 +24,7 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 		var in struct {
 			Title, Description, Acceptance, Repo string
 			Priority                             int
+			DependsOn                            []string `json:"depends_on"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			http.Error(w, "bad json", http.StatusBadRequest)
@@ -111,6 +112,7 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 			PRURL  *string `json:"pr_url"`
 			Branch *string `json:"branch"`
 			Note   *string `json:"note"`
+			Merged *bool   `json:"merged"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			http.Error(w, "bad json", http.StatusBadRequest)

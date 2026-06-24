@@ -144,6 +144,42 @@ func TestClaimAtomicNoDoubleClaim(t *testing.T) {
 	}
 }
 
+func TestDependencyGating(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.now = fixedClock()
+	a, _ := s.Create(TaskInput{Title: "A", Priority: 1})
+	b, _ := s.Create(TaskInput{Title: "B", Priority: 9, DependsOn: []string{a.ID}}) // higher prio but blocked
+
+	// B outranks A on priority, but it's blocked → Claim must return A.
+	c1, ok := s.Claim()
+	if !ok || c1.ID != a.ID {
+		t.Fatalf("want A first (B blocked), got %+v ok=%v", c1, ok)
+	}
+	// Nothing else claimable: B waits on A, which isn't merged.
+	if c2, ok := s.Claim(); ok {
+		t.Fatalf("B must stay blocked until A merges, but claimed %+v", c2)
+	}
+	// A's PR merges.
+	done := StatusDone
+	s.Patch(a.ID, Patch{Status: &done})
+	mg := true
+	s.Patch(a.ID, Patch{Merged: &mg})
+	// Now B is claimable.
+	c3, ok := s.Claim()
+	if !ok || c3.ID != b.ID {
+		t.Fatalf("B should claim after A merged, got %+v ok=%v", c3, ok)
+	}
+}
+
+func TestUnknownDependencyBlocks(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.now = fixedClock()
+	s.Create(TaskInput{Title: "B", Priority: 5, DependsOn: []string{"t_9999"}}) // dep doesn't exist
+	if c, ok := s.Claim(); ok {
+		t.Fatalf("task with unknown dependency must not be claimable, got %+v", c)
+	}
+}
+
 func TestCancelInProgress(t *testing.T) {
 	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
 	s.now = fixedClock()

@@ -36,6 +36,8 @@ type Task struct {
 	Branch      string    `json:"branch"`
 	Artifacts   []string  `json:"artifacts"`
 	Note        string    `json:"note"`
+	DependsOn   []string  `json:"depends_on,omitempty"` // task ids that must be merged before this can be claimed
+	Merged      bool      `json:"merged,omitempty"`     // this task's PR landed in the default branch
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -56,6 +58,7 @@ type TaskInput struct {
 	Acceptance  string
 	Repo        string
 	Priority    int
+	DependsOn   []string
 }
 
 type Store struct {
@@ -152,12 +155,13 @@ func (s *Store) Claim() (*Task, bool) {
 	return t, true
 }
 
-// claimBest flips the single best todo task to in_progress and returns it
-// (nil if none). Caller holds s.mu and is responsible for save().
+// claimBest flips the single best CLAIMABLE todo task to in_progress and returns
+// it (nil if none). A task is claimable only when every task it depends on has
+// merged. Caller holds s.mu and is responsible for save().
 func (s *Store) claimBest() *Task {
 	var best *Task
 	for _, t := range s.tasks {
-		if t.Status != StatusTodo {
+		if t.Status != StatusTodo || !s.depsSatisfied(t) {
 			continue
 		}
 		if best == nil || better(t, best) {
@@ -170,6 +174,18 @@ func (s *Store) claimBest() *Task {
 	best.Status = StatusInProgress
 	best.UpdatedAt = s.now()
 	return best
+}
+
+// depsSatisfied reports whether every task in t.DependsOn exists and has merged.
+// An unknown or unmerged dependency blocks the task. Caller holds s.mu.
+func (s *Store) depsSatisfied(t *Task) bool {
+	for _, id := range t.DependsOn {
+		d, ok := s.tasks[id]
+		if !ok || !d.Merged {
+			return false
+		}
+	}
+	return true
 }
 
 // ClaimBatch claims up to `want` best todo tasks in priority order, but never
@@ -225,6 +241,7 @@ type Patch struct {
 	PRURL  *string
 	Branch *string
 	Note   *string
+	Merged *bool
 }
 
 var errNotFound = fmt.Errorf("task not found")
@@ -236,7 +253,7 @@ func (s *Store) Patch(id string, p Patch) (*Task, error) {
 	if !ok {
 		return nil, errNotFound
 	}
-	old := Task{Status: t.Status, PRURL: t.PRURL, Branch: t.Branch, Note: t.Note, UpdatedAt: t.UpdatedAt}
+	old := Task{Status: t.Status, PRURL: t.PRURL, Branch: t.Branch, Note: t.Note, Merged: t.Merged, UpdatedAt: t.UpdatedAt}
 	if p.Status != nil {
 		t.Status = *p.Status
 	}
@@ -249,9 +266,12 @@ func (s *Store) Patch(id string, p Patch) (*Task, error) {
 	if p.Note != nil {
 		t.Note = *p.Note
 	}
+	if p.Merged != nil {
+		t.Merged = *p.Merged
+	}
 	t.UpdatedAt = s.now()
 	if err := s.save(); err != nil {
-		t.Status, t.PRURL, t.Branch, t.Note, t.UpdatedAt = old.Status, old.PRURL, old.Branch, old.Note, old.UpdatedAt
+		t.Status, t.PRURL, t.Branch, t.Note, t.Merged, t.UpdatedAt = old.Status, old.PRURL, old.Branch, old.Note, old.Merged, old.UpdatedAt
 		return nil, err
 	}
 	return t, nil
@@ -291,7 +311,8 @@ func (s *Store) Create(in TaskInput) (*Task, error) {
 	t := &Task{
 		ID: s.nextID(), Title: in.Title, Description: in.Description,
 		Acceptance: in.Acceptance, Repo: in.Repo, Priority: in.Priority,
-		Status: StatusTodo, Artifacts: []string{}, CreatedAt: now, UpdatedAt: now,
+		DependsOn: in.DependsOn,
+		Status:    StatusTodo, Artifacts: []string{}, CreatedAt: now, UpdatedAt: now,
 	}
 	s.tasks[t.ID] = t
 	if err := s.save(); err != nil {
