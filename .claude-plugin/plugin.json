@@ -1,6 +1,6 @@
 {
   "name": "punchcard",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Drive AI coding agents through a punchcard board: a PM files tasks, an Engineer ships them as reviewed PRs with proof of work.",
   "author": {
     "name": "ifokeev",
