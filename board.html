@@ -61,8 +61,10 @@
  .dot-todo{background:var(--c-todo)}.dot-in_progress{background:var(--c-in_progress)}
  .dot-in_review{background:var(--c-in_review)}.dot-done{background:var(--c-done)}
  .dot-blocked{background:var(--c-blocked)}.dot-failed{background:var(--c-failed)}.dot-cancelled{background:var(--c-cancelled)}
- .card{position:relative;border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:10px;background:#fff;transition:border-color .15s}
+ .card{position:relative;border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:10px;background:#fff;transition:border-color .15s;cursor:grab}
  .card:hover{border-color:rgba(0,0,0,.2)}
+ .card.drag{opacity:.4}
+ .col.drop{background:rgba(37,99,235,.05);border-radius:8px;box-shadow:0 0 0 4px rgba(37,99,235,.05)}
  .card .t{font-size:16px;font-weight:600;line-height:1.32;letter-spacing:-.006em;margin-bottom:9px;padding-right:20px}
  .card .del{position:absolute;top:10px;right:10px;background:none;border:none;padding:0;cursor:pointer;font-size:16px;line-height:1;color:var(--faint);transition:color .15s}
  .card .del:hover{color:var(--ink)}
@@ -119,9 +121,10 @@ async function load(){
   // when a column overflows, show the most-recently-updated first
   const items=(all.length>cap ? all.slice().sort((a,b)=>String(b.updated_at).localeCompare(String(a.updated_at))) : all).slice(0,cap);
   const col=document.createElement("div"); col.className="col";
+  col.ondragover=dragOver; col.ondragleave=dragLeave; col.ondrop=e=>dropCard(e,c);
   let html='<h2><span class="dot dot-'+c+'"></span>'+LABELS[c]+'<span class="ct mono">'+all.length+'</span></h2>';
   for(const t of items){
-   let h='<div class="card"><button class="del" onclick="delTask(\''+esc(t.id)+'\')" title="Delete">&times;</button><div class="t">'+esc(t.title)+'</div>';
+   let h='<div class="card" draggable="true" ondragstart="dragStart(event,\''+esc(t.id)+'\')" ondragend="dragEnd(event)"><button class="del" onclick="delTask(\''+esc(t.id)+'\')" title="Delete">&times;</button><div class="t">'+esc(t.title)+'</div>';
    h+='<div class="m mono">'+esc(t.id)+' &middot; P'+(t.priority||0)+'</div>';
    if(t.status==='in_progress') h+='<button class="cancel" onclick="cancelTask(\''+esc(t.id)+'\')">Cancel run</button>';
    if(t.pr_url) h+='<a class="pr" href="'+esc(t.pr_url)+'" target="_blank" rel="noopener noreferrer">View PR &rarr;</a>';
@@ -151,6 +154,20 @@ document.getElementById("f").onsubmit=async e=>{
  load();
 };
 async function delTask(id){ if(!confirm('Delete this task?')) return; await fetch('/api/tasks/'+encodeURIComponent(id),{method:'DELETE'}); load(); }
+
+// --- drag a card between columns to change its status ---
+let dragging=false;
+function dragStart(e,id){ dragging=true; e.dataTransfer.setData('text/plain',id); e.dataTransfer.effectAllowed='move'; e.currentTarget.classList.add('drag'); }
+function dragEnd(e){ dragging=false; e.currentTarget.classList.remove('drag'); }
+function dragOver(e){ e.preventDefault(); e.dataTransfer.dropEffect='move'; e.currentTarget.classList.add('drop'); }
+function dragLeave(e){ e.currentTarget.classList.remove('drop'); }
+async function dropCard(e,status){
+ e.preventDefault(); e.currentTarget.classList.remove('drop'); dragging=false;
+ const id=e.dataTransfer.getData('text/plain');
+ if(!id) return;
+ await fetch('/api/tasks/'+encodeURIComponent(id),{method:'PATCH',headers:{"Content-Type":"application/json"},body:JSON.stringify({status})});
+ load();
+}
 async function cancelTask(id){ if(!confirm('Cancel this run? The agent stops at its next checkpoint and the task moves to Cancelled.')) return; await fetch('/api/tasks/'+encodeURIComponent(id),{method:'PATCH',headers:{"Content-Type":"application/json"},body:JSON.stringify({status:'cancelled'})}); load(); }
 
 // --- run control: pause/resume + concurrency, mirrored from the server ---
@@ -176,6 +193,6 @@ async function stopAll(){
 }
 document.getElementById("pausebtn").onclick=togglePause;
 
-loadControl(); load(); setInterval(()=>{loadControl();load();},2000);
+loadControl(); load(); setInterval(()=>{ if(!dragging){loadControl();load();} },2000);
 </script>
 </body></html>

@@ -40,6 +40,16 @@ type Task struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// validStatuses is the closed set a task may hold. Status is user-editable
+// (board drag-and-drop, `punch update --status`), so the API rejects anything
+// else — a typo must never silently drop a card off every column.
+var validStatuses = map[Status]bool{
+	StatusTodo: true, StatusInProgress: true, StatusInReview: true,
+	StatusDone: true, StatusBlocked: true, StatusFailed: true, StatusCancelled: true,
+}
+
+func validStatus(s Status) bool { return validStatuses[s] }
+
 type TaskInput struct {
 	Title       string
 	Description string

@@ -159,6 +159,38 @@ func TestPatchViaAPI(t *testing.T) {
 	}
 }
 
+func TestPatchRejectsInvalidStatus(t *testing.T) {
+	h := newTestServer(t)
+	body, _ := json.Marshal(map[string]any{"title": "t"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/tasks", bytes.NewReader(body)))
+	var created Task
+	json.Unmarshal(rec.Body.Bytes(), &created)
+
+	// Bogus status -> 400, task unchanged.
+	bad, _ := json.Marshal(map[string]any{"status": "shipped"})
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("PATCH", "/api/tasks/"+created.ID, bytes.NewReader(bad)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid status: want 400, got %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/tasks/"+created.ID, nil))
+	var got Task
+	json.Unmarshal(rec.Body.Bytes(), &got)
+	if got.Status != StatusTodo {
+		t.Fatalf("status changed despite 400: %v", got.Status)
+	}
+
+	// A valid status still works.
+	ok, _ := json.Marshal(map[string]any{"status": "in_review"})
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("PATCH", "/api/tasks/"+created.ID, bytes.NewReader(ok)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("valid status: want 200, got %d", rec.Code)
+	}
+}
+
 func TestDeleteTaskViaAPI(t *testing.T) {
 	h := newTestServer(t)
 

@@ -115,6 +115,10 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 			http.Error(w, "bad json", http.StatusBadRequest)
 			return
 		}
+		if in.Status != nil && !validStatus(*in.Status) {
+			http.Error(w, "invalid status", http.StatusBadRequest)
+			return
+		}
 		t, err := s.Patch(r.PathValue("id"), Patch(in))
 		if err == errNotFound {
 			http.Error(w, "not found", http.StatusNotFound)
