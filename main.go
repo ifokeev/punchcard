@@ -12,7 +12,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("usage: punch <serve|add|next|update|attach|list|get|memory> [flags]")
+		fmt.Println("usage: punch <serve|add|next|update|attach|list|get|memory|config> [flags]")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
@@ -32,6 +32,8 @@ func main() {
 		cmdGet(os.Args[2:])
 	case "memory":
 		cmdMemory(os.Args[2:])
+	case "config":
+		cmdConfig(os.Args[2:])
 	default:
 		fail("unknown command %q", os.Args[1])
 	}
@@ -286,4 +288,100 @@ func sweepStuck(s *Store) {
 	if n := s.SweepStuck(30 * time.Minute); n > 0 {
 		log.Printf("startup sweep: flagged %d stuck in_progress task(s) as failed", n)
 	}
+}
+
+// cmdConfig dispatches config subcommands: set, show.
+func cmdConfig(args []string) {
+	if len(args) < 1 {
+		fail("usage: punch config <set|show> [flags]")
+	}
+	switch args[0] {
+	case "set":
+		cmdConfigSet(args[1:])
+	case "show":
+		cmdConfigShow()
+	default:
+		fail("unknown config subcommand %q", args[0])
+	}
+}
+
+// maskToken returns a masked representation of a token for display.
+// Shows "set (last 4: XXXX)" if the token is long enough, or "set" otherwise.
+func maskToken(tok string) string {
+	if len(tok) >= 4 {
+		return "set (last 4: " + tok[len(tok)-4:] + ")"
+	}
+	return "set"
+}
+
+func cmdConfigSet(args []string) {
+	const sentinel = "\x00unset\x00"
+	fs := flag.NewFlagSet("config set", flag.ExitOnError)
+	urlFlag := fs.String("url", sentinel, "server URL")
+	tokenFlag := fs.String("token", sentinel, "bearer token")
+	fs.Parse(args)
+
+	// Determine which flags were explicitly provided.
+	urlSet := false
+	tokenSet := false
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "url":
+			urlSet = true
+		case "token":
+			tokenSet = true
+		}
+	})
+
+	cfg := loadConfig()
+	if urlSet {
+		cfg.URL = *urlFlag
+	}
+	if tokenSet {
+		cfg.Token = *tokenFlag
+	}
+	if err := saveConfig(cfg); err != nil {
+		fail("config set: %v", err)
+	}
+
+	fmt.Printf("Config saved to %s\n", configPath())
+	if urlSet {
+		fmt.Printf("  url   = %s\n", cfg.URL)
+	}
+	if tokenSet {
+		if cfg.Token != "" {
+			fmt.Printf("  token = %s\n", maskToken(cfg.Token))
+		} else {
+			fmt.Printf("  token = (cleared)\n")
+		}
+	}
+}
+
+func cmdConfigShow() {
+	path := configPath()
+	cfg := loadConfig()
+
+	url := resolvedURL()
+	urlSource := "default"
+	if os.Getenv("PUNCH_URL") != "" {
+		urlSource = "env (PUNCH_URL)"
+	} else if cfg.URL != "" {
+		urlSource = "config file"
+	}
+
+	token := resolvedToken()
+	tokenDesc := "not set"
+	tokenSource := ""
+	if token != "" {
+		tokenDesc = maskToken(token)
+		if os.Getenv("PUNCH_TOKEN") != "" {
+			tokenSource = " [env: PUNCH_TOKEN]"
+		} else {
+			tokenSource = " [config file]"
+		}
+	}
+
+	fmt.Printf("Config file : %s\n", path)
+	fmt.Printf("URL         : %s [%s]\n", url, urlSource)
+	fmt.Printf("Token       : %s%s\n", tokenDesc, tokenSource)
 }

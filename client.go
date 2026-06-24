@@ -13,10 +13,7 @@ import (
 )
 
 func baseURL() string {
-	if u := os.Getenv("PUNCH_URL"); u != "" {
-		return u
-	}
-	return "http://127.0.0.1:8080"
+	return resolvedURL()
 }
 
 func authReq(method, path string, body io.Reader, contentType string) (*http.Request, error) {
@@ -24,7 +21,7 @@ func authReq(method, path string, body io.Reader, contentType string) (*http.Req
 	if err != nil {
 		return nil, err
 	}
-	if tok := os.Getenv("PUNCH_TOKEN"); tok != "" {
+	if tok := resolvedToken(); tok != "" {
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
 	if contentType != "" {
