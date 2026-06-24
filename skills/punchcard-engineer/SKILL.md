@@ -25,34 +25,55 @@ accumulates; the subagent does not).
      `acceptance`, `repo`).
 
 2. **Dispatch a fresh subagent** with the task brief + this contract. The subagent
-   does steps 3–8 and returns ONE line: `id | branch | pr_url | proof_url | outcome`.
+   does steps 3–9 and returns ONE line: `id | branch | pr_url | proof_url | outcome`.
 
-3. **(subagent) Load context:** `cd <repo>`; recall relevant notes with
-   `punch memory search "<topic/keywords>" --repo <repo>` and read the returned notes.
-   Create a branch `punch/<id>-<slug>`.
+3. **(subagent) Isolate in a git worktree** — NEVER work in the shared/main working
+   tree: it may be dirty or in use by another agent, and committing there sweeps in
+   unrelated changes. Branch off a clean, up-to-date default branch:
+   ```bash
+   git -C <repo> fetch origin
+   DEFAULT=$(git -C <repo> remote show origin | sed -n 's/.*HEAD branch: //p')
+   WT="$(mktemp -d)/punch-<id>"
+   git -C <repo> worktree add "$WT" -b punch/<id>-<slug> "origin/$DEFAULT"
+   cd "$WT"
+   ```
+   Your branch now contains ONLY this task's changes, isolated from every other agent.
+   Then recall context: `punch memory search "<topic/keywords>" --repo <repo>`.
 
-4. **(subagent) Implement** to satisfy `acceptance`. Run the repo's tests. Commit.
+4. **(subagent) Implement** in the worktree to satisfy `acceptance`. Run the repo's
+   tests. Commit with **Conventional Commits** (`feat:`, `fix:`, `refactor:`, `docs:`,
+   `test:`, `chore:` …) — one focused commit per logical change.
 
-5. **(subagent) Open the PR:** push, then `gh pr create --fill`. Capture the PR URL.
-   If `gh pr create` fails, STOP and return outcome=`failed: <reason>`.
+5. **(subagent) Open the PR:** `git push -u origin punch/<id>-<slug>`, then
+   `gh pr create --fill`. The PR **title must be a Conventional Commit** (e.g.
+   `feat: add CSV export`) — `--fill` derives it from your conventional commit, or pass
+   `--title "feat: …"`. Capture the PR URL. On failure → clean up (step 9), return
+   outcome=`failed: <reason>`.
 
 6. **(subagent) Self-review INLINE** (subagents cannot call slash commands):
-   `gh pr diff` → read the diff critically for bugs/regressions/missed acceptance →
-   fix → commit → push. Do NOT invoke `/review` or `/code-review`.
+   `gh pr diff` → read critically for bugs/regressions/missed acceptance → fix →
+   commit (conventional) → push. Do NOT invoke `/review` or `/code-review`.
 
-7. **(subagent) Proof of work:** capture a short artifact of the result (Chrome-MCP
-   GIF for web changes; a screenshot otherwise) and upload it:
-   `punch attach <id> <file>`. Capture the returned proof URL.
+7. **(subagent) Confirm it's mergeable** — a task is NOT "done" if it can't merge:
+   - `gh pr view <pr> --json mergeable,mergeStateStatus` must report **`MERGEABLE`**.
+     If `CONFLICTING`, rebase onto `origin/$DEFAULT`, resolve, and push.
+   - If the repo runs CI, `gh pr checks <pr> --watch` and require checks to **pass**.
+   - If it stays unmergeable or checks fail → return outcome=`blocked: <reason>`.
 
-8. **(subagent) Return** the one-line summary. If anything in 3–7 failed, return
-   outcome=`failed: <reason>` (do not throw away the partial PR URL if one exists).
+8. **(subagent) Proof of work:** capture an artifact (Chrome-MCP GIF for web changes;
+   a screenshot otherwise) and `punch attach <id> <file>`. Capture the proof URL.
 
-9. **(loop) Record state** from the subagent's summary:
-   - success → `punch update <id> --pr <pr_url> --branch <branch> --status done`
-   - failure → `punch update <id> --status failed --note "<reason>"` (or `blocked` if
-     it needs a human)
-   - **Always continue to the next task.** A single failed task must NOT stop the
-     loop — only an empty queue does.
+9. **(subagent) Clean up + return:** `cd <repo> && git worktree remove --force "$WT"`
+   (the branch + PR stay on the remote). Return the one-line summary. On ANY failure in
+   3–8, still remove the worktree and return `failed:`/`blocked: <reason>` (keep the PR
+   URL if one exists).
+
+10. **(loop) Record state** from the subagent's summary:
+    - mergeable success → `punch update <id> --pr <pr_url> --branch <branch> --status done`
+    - blocked → `punch update <id> --status blocked --note "<reason>"`; failed →
+      `punch update <id> --status failed --note "<reason>"`
+    - **Always continue.** One failed/blocked task never stops the loop — only a
+      drained queue does.
 
 ## Memory capture (at the `done` step)
 End each task by asking: *"did I learn anything durable a future task should know?"*

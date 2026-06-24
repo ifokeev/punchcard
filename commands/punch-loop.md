@@ -14,9 +14,13 @@ Loop until the queue is drained:
    - Otherwise parse the returned task JSON (`id`, `title`, `description`, `acceptance`,
      `repo`).
 2. Dispatch a **fresh subagent** with that brief to do the whole task in its own clean
-   context: branch → implement → commit → `gh pr create` → inline self-review via
-   `gh pr diff` (subagents can't call slash commands) → fix → capture proof of work and
-   `punch attach <id> <file>` → return a one-line summary.
+   context: **create an isolated `git worktree` off `origin/<default>`** (never the
+   shared main tree — that sweeps in unrelated changes and collides with other agents)
+   → implement → commit (**Conventional Commits**) → push → `gh pr create` (conventional
+   PR title) → inline self-review via `gh pr diff` (subagents can't call slash commands)
+   → fix → **confirm the PR is mergeable** (`gh pr view --json mergeable`; CI checks pass)
+   → capture proof and `punch attach <id> <file>` → remove the worktree → return a
+   one-line summary.
 3. Record state from the summary: success → `punch update <id> --pr <url> --branch <name>
    --status done`; failure → `punch update <id> --status failed --note "<why>"` (or
    `blocked`). **A failed task must NOT stop the loop — continue to the next.**
