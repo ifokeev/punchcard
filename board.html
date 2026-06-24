@@ -63,6 +63,9 @@
  .card img,.card video{display:block;width:100%;margin-top:12px;border:1px solid var(--line);border-radius:6px}
  .card .file{display:block;margin-top:8px;font-size:13px;color:var(--mut);word-break:break-all}
  .empty{color:var(--faint);font-size:14px;padding:2px 0}
+ .morebtn{display:block;width:100%;margin-top:2px;padding:7px;font-family:inherit;font-size:12px;
+  color:var(--mut);background:none;border:1px dashed var(--line);border-radius:7px;cursor:pointer}
+ .morebtn:hover{color:var(--ink);border-color:var(--mut)}
 </style></head>
 <body>
 <div class="bar"><b>punchcard</b><span>watch your AI coding agents ship</span></div>
@@ -87,13 +90,17 @@
 const LABELS={todo:"Todo",in_progress:"In Progress",in_review:"In Review",done:"Done",blocked:"Blocked",failed:"Failed"};
 const COLS=["todo","in_progress","in_review","done","blocked","failed"];
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const CAP=20, lim={};
 async function load(){
  const tasks=await (await fetch("/api/tasks")).json();
  const board=document.getElementById("board"); board.innerHTML="";
  for(const c of COLS){
-  const items=tasks.filter(t=>t.status===c);
+  const all=tasks.filter(t=>t.status===c);
+  const cap=lim[c]||CAP;
+  // when a column overflows, show the most-recently-updated first
+  const items=(all.length>cap ? all.slice().sort((a,b)=>String(b.updated_at).localeCompare(String(a.updated_at))) : all).slice(0,cap);
   const col=document.createElement("div"); col.className="col";
-  let html='<h2><span class="dot dot-'+c+'"></span>'+LABELS[c]+'<span class="ct mono">'+items.length+'</span></h2>';
+  let html='<h2><span class="dot dot-'+c+'"></span>'+LABELS[c]+'<span class="ct mono">'+all.length+'</span></h2>';
   for(const t of items){
    let h='<div class="card"><button class="del" onclick="delTask(\''+esc(t.id)+'\')" title="Delete">&times;</button><div class="t">'+esc(t.title)+'</div>';
    h+='<div class="m mono">'+esc(t.id)+' &middot; P'+(t.priority||0)+'</div>';
@@ -106,10 +113,12 @@ async function load(){
    }
    h+='</div>'; html+=h;
   }
-  if(!items.length) html+='<div class="empty">&mdash;</div>';
+  if(!all.length) html+='<div class="empty">&mdash;</div>';
+  if(all.length>items.length) html+='<button class="morebtn" onclick="moreTasks(\''+c+'\')">show '+(all.length-items.length)+' more</button>';
   col.innerHTML=html; board.appendChild(col);
  }
 }
+function moreTasks(c){ lim[c]=(lim[c]||CAP)+CAP; load(); }
 document.getElementById("newbtn").onclick=()=>{const f=document.getElementById("f");f.hidden=false;document.getElementById("newbtn").hidden=true;f.querySelector('[name=title]').focus();};
 document.getElementById("more").onclick=e=>{e.preventDefault();document.getElementById("details").hidden=false;e.target.style.display="none";};
 document.getElementById("f").onsubmit=async e=>{
