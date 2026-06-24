@@ -17,6 +17,48 @@ func newTestServer(t *testing.T) http.Handler {
 	return newMux(s, ms, "")
 }
 
+func TestHealthEndpoint(t *testing.T) {
+	h := newTestServer(t)
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		wantStatus int
+		wantBody   map[string]string
+		wantCT     string
+	}{
+		{
+			name:       "GET /health returns 200 ok json",
+			method:     "GET",
+			path:       "/health",
+			wantStatus: http.StatusOK,
+			wantBody:   map[string]string{"status": "ok"},
+			wantCT:     "application/json",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(tt.method, tt.path, nil))
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body)
+			}
+			if ct := rec.Header().Get("Content-Type"); ct != tt.wantCT {
+				t.Fatalf("Content-Type=%q want %q", ct, tt.wantCT)
+			}
+			var got map[string]string
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatalf("unmarshal body: %v", err)
+			}
+			for k, v := range tt.wantBody {
+				if got[k] != v {
+					t.Fatalf("body[%q]=%q want %q", k, got[k], v)
+				}
+			}
+		})
+	}
+}
+
 func TestCreateAndListViaAPI(t *testing.T) {
 	h := newTestServer(t)
 	body, _ := json.Marshal(map[string]any{"title": "do x", "priority": 3})

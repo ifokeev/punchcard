@@ -15,6 +15,11 @@ func tokenMiddleware(token string) func(http.Handler) http.Handler {
 		}
 		want := "Bearer " + token
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Health checks are unauthenticated so liveness probes work without a token.
+			if r.URL.Path == "/health" {
+				next.ServeHTTP(w, r)
+				return
+			}
 			got := r.Header.Get("Authorization")
 			if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)

@@ -16,6 +16,12 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 func newMux(s *Store, ms *MemoryStore, originBase string) *http.ServeMux {
 	mux := http.NewServeMux()
 
+	// Liveness/health probe. No auth, no store access — must answer even if the
+	// data store is unavailable. tokenMiddleware bypasses auth for this path.
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+
 	mux.HandleFunc("GET /api/tasks", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.List())
 	})

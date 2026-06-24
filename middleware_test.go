@@ -37,6 +37,15 @@ func TestTokenMiddlewareDisabledWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestTokenMiddlewareAllowsHealthWithoutToken(t *testing.T) {
+	h := tokenMiddleware("secret")(okHandler())
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/health", nil))
+	if rec.Code != 200 {
+		t.Fatalf("health must bypass auth, got %d", rec.Code)
+	}
+}
+
 func TestProxyMiddlewareStripsWhenUntrusted(t *testing.T) {
 	var seen string
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
