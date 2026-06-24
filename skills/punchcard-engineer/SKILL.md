@@ -60,8 +60,17 @@ accumulates; the subagent does not).
    - If the repo runs CI, `gh pr checks <pr> --watch` and require checks to **pass**.
    - If it stays unmergeable or checks fail → return outcome=`blocked: <reason>`.
 
-8. **(subagent) Proof of work:** capture an artifact (Chrome-MCP GIF for web changes;
-   a screenshot otherwise) and `punch attach <id> <file>`. Capture the proof URL.
+8. **(subagent) Proof of work:** capture visual evidence the change works, then
+   `punch attach <id> <file>` (keep the returned proof URL).
+   - **Web changes — prefer [agent-browser](https://github.com/vercel-labs/agent-browser)**,
+     a single Rust CLI (more reliable here than an MCP browser tool: subagents can always
+     shell out via Bash, but may not have an MCP tool in their allowlist). Start the
+     app/dev server, then `agent-browser open <url>` → exercise the acceptance criteria
+     (`agent-browser snapshot -i --json`, `agent-browser click @eN`, fill inputs) →
+     `agent-browser screenshot proof.png`. This both *verifies* the feature and produces
+     the artifact. One-time setup: `npm i -g agent-browser && agent-browser install`.
+   - **Non-web / no browser tool:** attach a screenshot, a short terminal-output capture,
+     or the passing-test results as text. Never skip the proof step.
 
 9. **(subagent) Clean up + return:** `cd <repo> && git worktree remove --force "$WT"`
    (the branch + PR stay on the remote). Return the one-line summary. On ANY failure in
