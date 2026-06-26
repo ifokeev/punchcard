@@ -239,9 +239,10 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape')closeCard(); });
 
 // --- run control: pause/resume + concurrency, mirrored from the server ---
 let ctl={paused:false,concurrency:3};
+let concTimer=null; // set while a stepper edit is pending (debounce + poll guard)
 async function loadControl(){
  try{ ctl=await (await fetch("/api/control")).json(); }catch(e){ return; }
- document.getElementById("concval").textContent=ctl.concurrency;
+ if(concTimer==null) document.getElementById("concval").textContent=ctl.concurrency; // don't fight a pending edit
  const b=document.getElementById("pausebtn");
  b.innerHTML=ctl.paused?"&#9654; Resume":"&#9208; Pause";
  b.classList.toggle("paused",ctl.paused);
@@ -252,7 +253,15 @@ async function patchControl(body){
  loadControl();
 }
 function togglePause(){ patchControl(ctl.paused?{paused:false,stopped:false}:{paused:true}); }
-function setConc(d){ patchControl({concurrency:Math.max(1,(ctl.concurrency||3)+d)}); }
+function setConc(d){
+ // the displayed value is the source of truth so rapid clicks accumulate; one
+ // debounced PATCH sends the final absolute value (avoids out-of-order PATCHes).
+ const el=document.getElementById("concval");
+ const n=Math.max(1,(parseInt(el.textContent,10)||3)+d);
+ el.textContent=n;
+ clearTimeout(concTimer);
+ concTimer=setTimeout(()=>{ concTimer=null; patchControl({concurrency:n}); },300);
+}
 async function stopAll(){
  if(!confirm('Stop all runs? Pauses the board, cancels every in-progress task, and (if the kill-switch hook is enabled) hard-halts the loop on its next tool call. Clear with Resume.')) return;
  await fetch("/api/control",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({paused:true,stopped:true})});
