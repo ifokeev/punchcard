@@ -52,6 +52,22 @@ var validStatuses = map[Status]bool{
 
 func validStatus(s Status) bool { return validStatuses[s] }
 
+// validID is the allowed shape for a task/note id. Import is the only path that
+// lets a caller choose ids, and ids are interpolated into the board's HTML/JS, so
+// reject anything outside [A-Za-z0-9_-] at that boundary.
+func validID(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if !(c == '_' || c == '-' ||
+			(c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+			return false
+		}
+	}
+	return true
+}
+
 type TaskInput struct {
 	Title       string
 	Description string
@@ -345,6 +361,36 @@ func (s *Store) Create(in TaskInput) (*Task, error) {
 		return nil, err
 	}
 	return t, nil
+}
+
+// Empty reports whether the store holds no tasks (used to gate import).
+func (s *Store) Empty() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.tasks) == 0
+}
+
+// Replace swaps the entire task set for the given tasks and persists atomically.
+// Malformed entries (nil or missing id) are skipped. Used by import.
+func (s *Store) Replace(tasks []*Task) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old := s.tasks
+	s.tasks = make(map[string]*Task, len(tasks))
+	for _, t := range tasks {
+		if t == nil || t.ID == "" {
+			continue
+		}
+		if t.Artifacts == nil {
+			t.Artifacts = []string{}
+		}
+		s.tasks[t.ID] = t
+	}
+	if err := s.save(); err != nil {
+		s.tasks = old // rollback
+		return err
+	}
+	return nil
 }
 
 func (s *Store) DeleteTask(id string) error {

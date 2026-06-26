@@ -291,6 +291,36 @@ func TestDeleteTask(t *testing.T) {
 	}
 }
 
+func TestReplaceAndEmpty(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.now = fixedClock()
+	if !s.Empty() {
+		t.Fatalf("new store should be empty")
+	}
+	if err := s.Replace([]*Task{
+		{ID: "t_0001", Title: "A", Status: StatusDone, Merged: true},
+		{ID: "t_0002", Title: "B", Status: StatusTodo, DependsOn: []string{"t_0001"}},
+		nil,            // skipped
+		{Title: "noid"}, // skipped
+	}); err != nil {
+		t.Fatalf("Replace: %v", err)
+	}
+	if s.Empty() {
+		t.Fatalf("store should not be empty after Replace")
+	}
+	if b, ok := s.Get("t_0002"); !ok || len(b.DependsOn) != 1 || b.DependsOn[0] != "t_0001" {
+		t.Fatalf("depends_on not preserved: %+v", b)
+	}
+	if a, _ := s.Get("t_0001"); !a.Merged || a.Artifacts == nil {
+		t.Fatalf("merged/artifacts not normalized: %+v", a)
+	}
+	// Replacing again drops the previous set.
+	s.Replace([]*Task{{ID: "t_0009", Title: "C", Status: StatusTodo}})
+	if _, ok := s.Get("t_0001"); ok {
+		t.Fatalf("Replace should drop previous tasks")
+	}
+}
+
 func TestSweepStuck(t *testing.T) {
 	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
 	clk := fixedClock()

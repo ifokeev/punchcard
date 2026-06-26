@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -14,7 +15,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("usage: punch <serve|add|next|update|attach|cancel|list|get|rm|pause|resume|stop|concurrency|memory|config> [flags]")
+		fmt.Println("usage: punch <serve|add|next|update|attach|cancel|list|get|rm|pause|resume|stop|concurrency|export|import|memory|config> [flags]")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
@@ -34,6 +35,10 @@ func main() {
 		cmdList(os.Args[2:])
 	case "pending-merges":
 		cmdPendingMerges()
+	case "export":
+		cmdExport(os.Args[2:])
+	case "import":
+		cmdImport(os.Args[2:])
 	case "get":
 		cmdGet(os.Args[2:])
 	case "rm":
@@ -275,6 +280,66 @@ func cmdPendingMerges() {
 	code, body, err := doJSON("GET", "/api/pending-merges", nil)
 	if err != nil || code != http.StatusOK {
 		fail("pending-merges failed (%d): %v", code, err)
+	}
+	fmt.Println(string(body))
+}
+
+// cmdExport writes the board (tasks + memory) as a JSON bundle to stdout or --out.
+func cmdExport(args []string) {
+	fs := flag.NewFlagSet("export", flag.ExitOnError)
+	out := fs.String("out", "", "write to this file instead of stdout")
+	fs.Parse(args)
+	code, body, err := doJSON("GET", "/api/export", nil)
+	if err != nil || code != http.StatusOK {
+		fail("export failed (%d): %v", code, err)
+	}
+	if *out == "" {
+		fmt.Println(string(body))
+		return
+	}
+	if err := os.WriteFile(*out, body, 0o644); err != nil {
+		fail("write %s: %v", *out, err)
+	}
+	fmt.Fprintf(os.Stderr, "exported %s\n", *out)
+}
+
+// cmdImport loads a bundle into the board. It refuses a non-empty board unless
+// --replace is given.
+func cmdImport(args []string) {
+	// Split the positional file from flags so order doesn't matter (Go's flag pkg
+	// otherwise stops parsing at the first non-flag arg).
+	var file string
+	var flags []string
+	for _, a := range args {
+		if file == "" && !strings.HasPrefix(a, "-") {
+			file = a
+		} else {
+			flags = append(flags, a)
+		}
+	}
+	if file == "" {
+		fail("usage: punch import <file> [--replace]")
+	}
+	fs := flag.NewFlagSet("import", flag.ExitOnError)
+	replace := fs.Bool("replace", false, "overwrite a non-empty board")
+	fs.Parse(flags)
+	data, err := os.ReadFile(file)
+	if err != nil {
+		fail("read %s: %v", file, err)
+	}
+	path := "/api/import"
+	if *replace {
+		path += "?replace=true"
+	}
+	code, body, err := doJSON("POST", path, json.RawMessage(data)) // RawMessage is sent as-is, not re-encoded
+	if err != nil {
+		fail("import: %v", err)
+	}
+	if code == http.StatusConflict {
+		fail("target board is not empty — re-run with --replace to overwrite it")
+	}
+	if code != http.StatusOK {
+		fail("import failed (%d): %s", code, body)
 	}
 	fmt.Println(string(body))
 }

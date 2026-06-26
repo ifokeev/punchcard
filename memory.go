@@ -184,6 +184,36 @@ func (ms *MemoryStore) ListNotes(repo, query string) []*Note {
 	return out
 }
 
+// Empty reports whether the store holds no notes (used to gate import).
+func (ms *MemoryStore) Empty() bool {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	return len(ms.notes) == 0
+}
+
+// Replace swaps the entire note set for the given notes and persists atomically.
+// Malformed entries (nil or missing id) are skipped. Used by import.
+func (ms *MemoryStore) Replace(notes []*Note) error {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	old := ms.notes
+	ms.notes = make(map[string]*Note, len(notes))
+	for _, n := range notes {
+		if n == nil || n.ID == "" {
+			continue
+		}
+		if n.Tags == nil {
+			n.Tags = []string{}
+		}
+		ms.notes[n.ID] = n
+	}
+	if err := ms.save(); err != nil {
+		ms.notes = old // rollback
+		return err
+	}
+	return nil
+}
+
 // GetNote returns the note with the given id, or false if absent.
 func (ms *MemoryStore) GetNote(id string) (*Note, bool) {
 	ms.mu.Lock()

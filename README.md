@@ -124,3 +124,16 @@ PUNCH_PROFILE=side claude       # then /loop /punch-loop → drives the side boa
 That one var routes the loop, every subagent, and the kill-switch hook to that board, so
 two projects run side by side without colliding. `PUNCH_URL`/`PUNCH_TOKEN` still win over
 a profile.
+
+## Move a board between instances
+Everything is in `tasks.json` + `memory.json`, so a **local** move is just copying those
+files (and `artifacts/`). For a **remote** board you can't reach by filesystem, do it over
+the API:
+```bash
+punch export --out board.json                  # from the source board
+PUNCH_PROFILE=newbox punch import board.json    # into the target board
+```
+The bundle carries tasks **and** memory with full state — status, dependencies, merge
+flags, PR links. Import **refuses a non-empty board unless you pass `--replace`**, so it
+can't silently clobber existing work. Proof-of-work artifacts (binary) aren't bundled —
+copy the `artifacts/` directory alongside if you want them.

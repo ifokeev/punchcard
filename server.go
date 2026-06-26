@@ -231,6 +231,7 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	registerTransferRoutes(mux, s, ms)       // export/import — defined in transfer.go
 	registerUploadRoutes(mux, s, originBase) // defined in upload.go (Task 5)
 	registerBoard(mux)                       // defined in server_board.go via Task 8
 	return mux

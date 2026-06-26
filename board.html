@@ -134,7 +134,9 @@
 <script>
 const LABELS={todo:"Todo",in_progress:"In Progress",in_review:"In Review",done:"Done",blocked:"Blocked",failed:"Failed",cancelled:"Cancelled"};
 const COLS=["todo","in_progress","in_review","done","blocked","failed","cancelled"];
-const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const esc=s=>String(s==null?"":s).replace(/[&<>"'/]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","/":"&#47;"}[c]));
+// only allow http(s)/relative URLs through to href/src — blocks javascript:/data:
+const safeURL=u=>/^(https?:\/\/|\/)/i.test(String(u||""))?u:"#";
 const CAP=20, lim={};
 let tasksById={};
 async function load(){
@@ -156,12 +158,12 @@ async function load(){
    if(t.status==='todo'&&unmet.length) h+='<div class="dep">waiting on '+unmet.map(esc).join(', ')+'</div>';
    if(t.merged) h+='<div class="merged">&#10003; merged</div>';
    if(t.status==='in_progress') h+='<button class="cancel" onclick="event.stopPropagation();cancelTask(\''+esc(t.id)+'\')">Cancel run</button>';
-   if(t.pr_url) h+='<a class="pr" href="'+esc(t.pr_url)+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">View PR &rarr;</a>';
+   if(t.pr_url) h+='<a class="pr" href="'+esc(safeURL(t.pr_url))+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">View PR &rarr;</a>';
    for(const a of (t.artifacts||[])){
     const src=a.replace("/artifacts/","/preview/");
-    if(/\.(png|gif|jpg|jpeg|webp)$/i.test(a)) h+='<img src="'+esc(src)+'">';
-    else if(/\.(mp4|webm)$/i.test(a)) h+='<video src="'+esc(src)+'" controls muted></video>';
-    else h+='<a class="file mono" href="'+esc(a)+'" onclick="event.stopPropagation()">'+esc(a)+'</a>';
+    if(/\.(png|gif|jpg|jpeg|webp)$/i.test(a)) h+='<img src="'+esc(safeURL(src))+'">';
+    else if(/\.(mp4|webm)$/i.test(a)) h+='<video src="'+esc(safeURL(src))+'" controls muted></video>';
+    else h+='<a class="file mono" href="'+esc(safeURL(a))+'" onclick="event.stopPropagation()">'+esc(a)+'</a>';
    }
    h+='</div>'; html+=h;
   }
@@ -217,15 +219,15 @@ function openCard(id){
  }
  if(t.repo) b+=field('Repo',t.repo,true);
  if(t.branch) b+=field('Branch',t.branch,true);
- if(t.pr_url) b+='<div class="field"><h3>Pull request</h3><div class="v"><a href="'+esc(t.pr_url)+'" target="_blank" rel="noopener noreferrer">'+esc(t.pr_url)+' &rarr;</a></div></div>';
+ if(t.pr_url) b+='<div class="field"><h3>Pull request</h3><div class="v"><a href="'+esc(safeURL(t.pr_url))+'" target="_blank" rel="noopener noreferrer">'+esc(t.pr_url)+' &rarr;</a></div></div>';
  if(t.note) b+=field('Note',t.note);
  const arts=t.artifacts||[];
  if(arts.length){
   b+='<div class="field"><h3>Proof of work</h3>';
   for(const a of arts){ const src=a.replace("/artifacts/","/preview/");
-   if(/\.(png|gif|jpg|jpeg|webp)$/i.test(a)) b+='<img src="'+esc(src)+'">';
-   else if(/\.(mp4|webm)$/i.test(a)) b+='<video src="'+esc(src)+'" controls muted></video>';
-   else b+='<a class="file mono" href="'+esc(a)+'">'+esc(a)+'</a>'; }
+   if(/\.(png|gif|jpg|jpeg|webp)$/i.test(a)) b+='<img src="'+esc(safeURL(src))+'">';
+   else if(/\.(mp4|webm)$/i.test(a)) b+='<video src="'+esc(safeURL(src))+'" controls muted></video>';
+   else b+='<a class="file mono" href="'+esc(safeURL(a))+'">'+esc(a)+'</a>'; }
   b+='</div>';
  }
  b+='<div class="ts"><span>created '+esc(fmtDate(t.created_at))+'</span><span>updated '+esc(fmtDate(t.updated_at))+'</span></div>';
