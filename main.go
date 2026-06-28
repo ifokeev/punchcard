@@ -13,12 +13,18 @@ import (
 	"time"
 )
 
+// version is injected at release time via -ldflags "-X main.version=...".
+// Plain `go build` leaves it "dev".
+var version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("usage: punch <serve|add|next|update|attach|cancel|list|get|rm|pause|resume|stop|concurrency|export|import|memory|config> [flags]")
+		fmt.Println("usage: punch <serve|add|next|update|attach|cancel|list|get|rm|pause|resume|stop|concurrency|export|import|memory|config|version> [flags]")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "version", "--version", "-v":
+		fmt.Println(version)
 	case "serve":
 		cmdServe(os.Args[2:])
 	case "add":
@@ -97,7 +103,7 @@ func cmdServe(args []string) {
 	var h http.Handler = newMux(s, ms, cstore, *originBase)
 	h = proxyMiddleware(*trustedProxy)(h)
 	h = tokenMiddleware(*token)(h)
-	log.Printf("punchcard serving on %s (auth=%v)", *addr, *token != "")
+	log.Printf("punchcard %s serving on %s (auth=%v)", version, *addr, *token != "")
 	log.Fatal(http.ListenAndServe(*addr, h))
 }
 

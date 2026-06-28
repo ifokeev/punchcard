@@ -1,5 +1,7 @@
 BINARY=punch
-LDFLAGS=-s -w
+# VERSION comes from the git tag (e.g. v0.6.1); falls back to short SHA, then "dev".
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS=-s -w -X main.version=$(VERSION)
 TARGETS=linux/amd64 linux/arm64 darwin/arm64 darwin/amd64
 
 build:

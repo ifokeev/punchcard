@@ -345,3 +345,19 @@ func TestWorkerLastPollViaAPI(t *testing.T) {
 		t.Fatal("last_poll still null after POST /api/next")
 	}
 }
+
+func TestVersionViaAPI(t *testing.T) {
+	h := newTestServer(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/version", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var out struct {
+		Version string `json:"version"`
+	}
+	json.Unmarshal(rec.Body.Bytes(), &out)
+	if out.Version == "" {
+		t.Fatal("version is empty; want at least the 'dev' default")
+	}
+}

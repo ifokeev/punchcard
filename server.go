@@ -17,6 +17,10 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *http.ServeMux {
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"version": version})
+	})
+
 	mux.HandleFunc("GET /api/tasks", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.List())
 	})

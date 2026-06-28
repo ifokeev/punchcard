@@ -23,6 +23,7 @@
  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;letter-spacing:0}
  .bar{background:transparent;border-bottom:1px solid var(--line);padding:0 28px;height:56px;display:flex;align-items:center;gap:12px}
  .bar b{font-size:18px;font-weight:600;letter-spacing:-.02em;color:var(--ink)}
+ .bar .ver{font-size:11px;font-weight:500;color:var(--faint);padding:2px 7px;border:1px solid var(--line);border-radius:980px}
  .bar span{font-size:14px;color:var(--mut)}
  /* worker liveness — is a loop actually polling this board? */
  .worker{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--mut);white-space:nowrap}
@@ -140,7 +141,7 @@
  .modal .ts{display:flex;gap:22px;font-size:13px;color:var(--faint);border-top:1px solid var(--line);padding-top:14px}
 </style></head>
 <body>
-<div class="bar"><b>punchcard</b><span>watch your AI coding agents ship</span><span class="worker" id="worker"></span></div>
+<div class="bar"><b>punchcard</b><span class="ver mono" id="ver"></span><span>watch your AI coding agents ship</span><span class="worker" id="worker"></span></div>
 <div class="wrap">
 <div class="addrow">
  <button type="button" id="newbtn" class="ghost"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2v11.6M2.2 8h11.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>New task</button>
@@ -335,6 +336,7 @@ async function stopAll(){
 }
 document.getElementById("pausebtn").onclick=togglePause;
 
+fetch("/api/version").then(r=>r.json()).then(d=>{const e=document.getElementById("ver"); if(e&&d.version) e.textContent=d.version;}).catch(()=>{});
 loadControl(); load(); setInterval(()=>{ if(!dragging){loadControl();load();} },2000);
 </script>
 </body></html>

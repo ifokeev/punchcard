@@ -21,6 +21,8 @@ punch serve                   # board + API on http://127.0.0.1:8080
 ```
 Prefer source? `git clone https://github.com/ifokeev/punchcard && cd punchcard && go build -o punch .` (Go 1.22+).
 
+**Upgrade:** re-run the same install one-liner — it always fetches the latest release and replaces the binary in place. Check what you're on with `punch version` (also shown in the `punch serve` banner and on the board).
+
 ## Use it with Claude Code
 The binary is only half of it — the agents are driven by a Claude Code **plugin**
 (two skills + a command). Install it:
