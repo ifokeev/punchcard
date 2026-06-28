@@ -21,8 +21,6 @@ punch serve                   # board + API on http://127.0.0.1:8080
 ```
 Prefer source? `git clone https://github.com/ifokeev/punchcard && cd punchcard && go build -o punch .` (Go 1.22+).
 
-**Upgrade:** re-run the same install one-liner — it always fetches the latest release and replaces the binary in place. Check what you're on with `punch version` (also shown in the `punch serve` banner and on the board).
-
 ## Use it with Claude Code
 The binary is only half of it — the agents are driven by a Claude Code **plugin**
 (two skills + a command). Install it:
@@ -53,6 +51,34 @@ between columns** to set its status yourself. The header shows whether a loop is
 polling — **active** / **idle** / **no loop** — and in-progress cards show the agent's
 current step with time since its last activity, so you can tell a working run from a wedged
 one at a glance (agents post steps with `punch update <id> --progress "<step>"`).
+
+## Updating
+The **binary** and the Claude Code **plugin** (the two skills + `/punch-loop`) update
+independently.
+
+**Binary** — re-run the install one-liner; it always fetches the latest release and
+replaces the binary in place:
+```sh
+curl -fsSL https://raw.githubusercontent.com/ifokeev/punchcard/main/install.sh | sh
+```
+Check what you're on with `punch version` (also in the `punch serve` banner and the board header).
+
+**Plugin (skills + command)** — from inside Claude Code:
+```text
+/plugin marketplace update punchcard     # refetch the latest from the marketplace
+/plugin install punchcard@punchcard      # reinstall = update to that version
+/reload-plugins                          # load it into the running session
+```
+Or scriptable from a shell (handy on a headless worker):
+`claude plugin marketplace update punchcard && claude plugin install punchcard@punchcard`.
+
+> **A running `/loop` won't pick up skill changes until you reload.** Skills load at
+> session start or on `/reload-plugins`, so an in-flight worker keeps using the old skill
+> until you run `/reload-plugins` (or `Esc` and restart the loop). Tasks already in
+> progress finish under the old skill; the next batch uses the new one.
+
+Installed the skills by hand (copy) or via `make dev` (symlinked clone)? Update the files
+— re-copy, or `git pull` + `make dev` — then `/reload-plugins`.
 
 ## Control the run
 Steer the loop from the **board** (or the `punch` CLI) without touching the agent
