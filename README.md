@@ -102,7 +102,11 @@ the dependents. So you can file a whole chain up front and let it land in order.
 | Public zero-trust | the above + Cloudflare Tunnel + Access |
 
 > Binding a non-loopback address without `--token` is refused (pass `--insecure` to
-> override). Put Tailscale/Cloudflare in front; the bearer token is defense-in-depth.
+> override). Put Tailscale/Cloudflare in front; the token is defense-in-depth.
+>
+> With `--token` set, the CLI/loop send it as a bearer header; **opening the board in a
+> browser prompts you for it** — leave the username blank and paste the token as the
+> password (your browser remembers it for the session).
 
 To point the `punch` CLI (and every agent subagent) at a remote or token-protected
 board, run once:

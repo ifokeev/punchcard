@@ -28,6 +28,47 @@ func TestTokenMiddleware(t *testing.T) {
 	}
 }
 
+func TestTokenMiddlewareBasicAuthForBrowser(t *testing.T) {
+	h := tokenMiddleware("secret")(okHandler())
+
+	// browser Basic auth: password == token (username ignored) -> 200
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+	req.SetBasicAuth("anyone", "secret")
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("correct Basic password should pass, got %d", rec.Code)
+	}
+
+	// wrong Basic password -> 401
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest("GET", "/", nil)
+	req.SetBasicAuth("anyone", "nope")
+	h.ServeHTTP(rec, req)
+	if rec.Code != 401 {
+		t.Fatalf("wrong Basic password must 401, got %d", rec.Code)
+	}
+
+	// a browser navigation (Accept: text/html) with no creds gets the prompt header
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Accept", "text/html")
+	h.ServeHTTP(rec, req)
+	if rec.Code != 401 || rec.Header().Get("WWW-Authenticate") == "" {
+		t.Fatalf("HTML navigation should 401 with a WWW-Authenticate prompt, got %d / %q",
+			rec.Code, rec.Header().Get("WWW-Authenticate"))
+	}
+
+	// an API/XHR call (no text/html) must NOT advertise Basic — no duplicate prompt
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest("GET", "/api/tasks", nil)
+	req.Header.Set("Accept", "application/json")
+	h.ServeHTTP(rec, req)
+	if rec.Header().Get("WWW-Authenticate") != "" {
+		t.Fatalf("API 401 should not send WWW-Authenticate, got %q", rec.Header().Get("WWW-Authenticate"))
+	}
+}
+
 func TestTokenMiddlewareDisabledWhenEmpty(t *testing.T) {
 	h := tokenMiddleware("")(okHandler())
 	rec := httptest.NewRecorder()

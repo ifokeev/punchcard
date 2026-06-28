@@ -13,10 +13,25 @@ func tokenMiddleware(token string) func(http.Handler) http.Handler {
 		if token == "" {
 			return next // auth disabled
 		}
-		want := "Bearer " + token
+		wantBearer := "Bearer " + token
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			got := r.Header.Get("Authorization")
-			if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+			// CLI / loop send the token as a bearer header.
+			ok := subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte(wantBearer)) == 1
+			// Browsers can't set a bearer header on a navigation, so also accept HTTP
+			// Basic where the password is the token (username ignored). The browser
+			// caches it and replays it on the page AND every fetch().
+			if !ok {
+				if _, pass, has := r.BasicAuth(); has &&
+					subtle.ConstantTimeCompare([]byte(pass), []byte(token)) == 1 {
+					ok = true
+				}
+			}
+			if !ok {
+				// Prompt a browser navigation for credentials; stay silent for API/XHR
+				// (Accept: application/json) so fetch() 401s don't pop a second dialog.
+				if strings.Contains(r.Header.Get("Accept"), "text/html") {
+					w.Header().Set("WWW-Authenticate", `Basic realm="punchcard"`)
+				}
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
