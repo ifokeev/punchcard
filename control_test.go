@@ -46,3 +46,14 @@ func TestControlPartialPatch(t *testing.T) {
 		t.Fatalf("partial patch = %+v, want {false 5 false}", got)
 	}
 }
+
+func TestControlTouchPoll(t *testing.T) {
+	cs, _ := NewControlStore(filepath.Join(t.TempDir(), "control.json"))
+	if !cs.LastPoll().IsZero() {
+		t.Fatal("LastPoll should be zero before any poll")
+	}
+	cs.TouchPoll()
+	if cs.LastPoll().IsZero() {
+		t.Fatal("LastPoll should be set after TouchPoll")
+	}
+}

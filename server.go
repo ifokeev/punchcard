@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -69,6 +70,7 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 	//   ?batch=1      -> up to `concurrency` tasks as a JSON array (204 if none)
 	//   (no batch)    -> a single task object (204 if none) — back-compat
 	mux.HandleFunc("POST /api/next", func(w http.ResponseWriter, r *http.Request) {
+		cs.TouchPoll() // worker liveness: a loop reached us, even if paused/empty
 		if cs.Get().Paused {
 			writeJSON(w, http.StatusLocked, map[string]string{"status": "paused"})
 			return
@@ -104,7 +106,16 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 	})
 
 	mux.HandleFunc("GET /api/control", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, cs.Get())
+		// last_poll is null until a loop has polled — the board reads it as
+		// "no worker connected" vs "worker active · Ns ago".
+		resp := struct {
+			Control
+			LastPoll *time.Time `json:"last_poll"`
+		}{Control: cs.Get()}
+		if lp := cs.LastPoll(); !lp.IsZero() {
+			resp.LastPoll = &lp
+		}
+		writeJSON(w, http.StatusOK, resp)
 	})
 
 	mux.HandleFunc("PATCH /api/control", func(w http.ResponseWriter, r *http.Request) {
@@ -127,11 +138,12 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 
 	mux.HandleFunc("PATCH /api/tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
-			Status *Status `json:"status"`
-			PRURL  *string `json:"pr_url"`
-			Branch *string `json:"branch"`
-			Note   *string `json:"note"`
-			Merged *bool   `json:"merged"`
+			Status   *Status `json:"status"`
+			PRURL    *string `json:"pr_url"`
+			Branch   *string `json:"branch"`
+			Note     *string `json:"note"`
+			Merged   *bool   `json:"merged"`
+			Progress *string `json:"progress"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			http.Error(w, "bad json", http.StatusBadRequest)

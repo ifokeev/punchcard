@@ -36,6 +36,7 @@ type Task struct {
 	Branch      string    `json:"branch"`
 	Artifacts   []string  `json:"artifacts"`
 	Note        string    `json:"note"`
+	Progress    string    `json:"progress,omitempty"`   // agent-posted current step while in_progress ("running tests")
 	DependsOn   []string  `json:"depends_on,omitempty"` // task ids that must be merged before this can be claimed
 	Merged      bool      `json:"merged,omitempty"`     // this task's PR landed in the default branch
 	CreatedAt   time.Time `json:"created_at"`
@@ -265,11 +266,12 @@ func better(a, b *Task) bool {
 }
 
 type Patch struct {
-	Status *Status
-	PRURL  *string
-	Branch *string
-	Note   *string
-	Merged *bool
+	Status   *Status
+	PRURL    *string
+	Branch   *string
+	Note     *string
+	Merged   *bool
+	Progress *string
 }
 
 var errNotFound = fmt.Errorf("task not found")
@@ -281,7 +283,7 @@ func (s *Store) Patch(id string, p Patch) (*Task, error) {
 	if !ok {
 		return nil, errNotFound
 	}
-	old := Task{Status: t.Status, PRURL: t.PRURL, Branch: t.Branch, Note: t.Note, Merged: t.Merged, UpdatedAt: t.UpdatedAt}
+	old := Task{Status: t.Status, PRURL: t.PRURL, Branch: t.Branch, Note: t.Note, Merged: t.Merged, Progress: t.Progress, UpdatedAt: t.UpdatedAt}
 	if p.Status != nil {
 		t.Status = *p.Status
 	}
@@ -297,9 +299,16 @@ func (s *Store) Patch(id string, p Patch) (*Task, error) {
 	if p.Merged != nil {
 		t.Merged = *p.Merged
 	}
+	if p.Progress != nil {
+		t.Progress = *p.Progress
+	}
+	// progress is the live step of a run — only meaningful while in_progress.
+	if t.Status != StatusInProgress {
+		t.Progress = ""
+	}
 	t.UpdatedAt = s.now()
 	if err := s.save(); err != nil {
-		t.Status, t.PRURL, t.Branch, t.Note, t.Merged, t.UpdatedAt = old.Status, old.PRURL, old.Branch, old.Note, old.Merged, old.UpdatedAt
+		t.Status, t.PRURL, t.Branch, t.Note, t.Merged, t.Progress, t.UpdatedAt = old.Status, old.PRURL, old.Branch, old.Note, old.Merged, old.Progress, old.UpdatedAt
 		return nil, err
 	}
 	return t, nil

@@ -226,7 +226,7 @@ func cmdConcurrency(args []string) {
 
 func cmdUpdate(args []string) {
 	if len(args) < 1 {
-		fail("usage: punch update <id> [--status ...] [--pr ...] [--branch ...] [--note ...] [--merged]")
+		fail("usage: punch update <id> [--status ...] [--pr ...] [--branch ...] [--note ...] [--progress ...] [--merged]")
 	}
 	id := args[0] // id is positional-first; flags follow (Go's flag pkg stops at the first non-flag)
 	fs := flag.NewFlagSet("update", flag.ExitOnError)
@@ -234,11 +234,15 @@ func cmdUpdate(args []string) {
 	pr := fs.String("pr", "", "pr url")
 	branch := fs.String("branch", "", "branch")
 	note := fs.String("note", "", "note")
+	progress := fs.String("progress", "", "current step shown live on the in-progress card")
 	merged := fs.Bool("merged", false, "mark this task's PR as merged (unblocks dependents)")
 	fs.Parse(args[1:])
 	payload := map[string]any{}
 	if *status != "" {
 		payload["status"] = *status
+	}
+	if *progress != "" {
+		payload["progress"] = *progress
 	}
 	if *pr != "" {
 		payload["pr_url"] = *pr

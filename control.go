@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // defaultConcurrencyFallback is used when PUNCH_CONCURRENCY is unset or invalid.
@@ -38,10 +39,14 @@ type Control struct {
 }
 
 // ControlStore persists Control atomically, guarded by a single mutex.
+// lastPoll is in-memory only: it's the wall-clock of the most recent /api/next
+// hit — the board's worker-liveness signal. Not persisted, so a fresh process
+// correctly reads "no worker" until a loop actually polls it.
 type ControlStore struct {
-	mu   sync.Mutex
-	path string
-	ctl  Control
+	mu       sync.Mutex
+	path     string
+	ctl      Control
+	lastPoll time.Time
 }
 
 func NewControlStore(path string) (*ControlStore, error) {
@@ -66,6 +71,20 @@ func (cs *ControlStore) Get() Control {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	return cs.ctl
+}
+
+// TouchPoll records that a loop just reached the server (called on every
+// /api/next). LastPoll reports the last such time, zero if never polled.
+func (cs *ControlStore) TouchPoll() {
+	cs.mu.Lock()
+	cs.lastPoll = time.Now()
+	cs.mu.Unlock()
+}
+
+func (cs *ControlStore) LastPoll() time.Time {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.lastPoll
 }
 
 // Patch applies the non-nil fields, clamps concurrency to >=1, persists, and

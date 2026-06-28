@@ -24,6 +24,11 @@
  .bar{background:transparent;border-bottom:1px solid var(--line);padding:0 28px;height:56px;display:flex;align-items:center;gap:12px}
  .bar b{font-size:18px;font-weight:600;letter-spacing:-.02em;color:var(--ink)}
  .bar span{font-size:14px;color:var(--mut)}
+ /* worker liveness — is a loop actually polling this board? */
+ .worker{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--mut);white-space:nowrap}
+ .worker .wd{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
+ .worker.live .wd{background:var(--c-done);box-shadow:0 0 7px rgba(39,166,68,.7)}
+ .worker .ago{color:var(--faint);font-variant-numeric:tabular-nums}
  .wrap{max-width:1320px;margin:0 auto;padding:28px}
  .addrow{margin-bottom:28px;display:flex;align-items:center;gap:12px}
  .ctl{margin-left:auto;display:flex;align-items:center;gap:10px}
@@ -94,6 +99,13 @@
  .pri i{width:3px;border-radius:1px;background:var(--faint)}
  .pri i.on{background:var(--sec)}
  .pri i:nth-child(1){height:4px}.pri i:nth-child(2){height:7px}.pri i:nth-child(3){height:10px}
+ /* live progress line on in-progress cards: agent's current step + time since last activity */
+ .card .prog{display:flex;align-items:center;gap:7px;margin-top:9px;font-size:12px;color:var(--sec)}
+ .card .prog .sp{width:7px;height:7px;border-radius:50%;background:var(--c-in_progress);flex:none}
+ .card .prog .st{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .card .prog .ago{margin-left:auto;color:var(--faint);font-variant-numeric:tabular-nums;flex:none}
+ .card .prog.stale{color:var(--c-blocked)}
+ .card .prog.stale .sp{background:var(--c-blocked)}
  .card .dep{margin-top:8px;font-size:12px;font-weight:500;color:var(--c-blocked)}
  .card .merged{margin-top:8px;font-size:12px;font-weight:500;color:var(--c-done)}
  .card .cancel{margin-top:10px;font-family:inherit;font-size:12px;font-weight:500;color:var(--c-failed);
@@ -128,7 +140,7 @@
  .modal .ts{display:flex;gap:22px;font-size:13px;color:var(--faint);border-top:1px solid var(--line);padding-top:14px}
 </style></head>
 <body>
-<div class="bar"><b>punchcard</b><span>watch your AI coding agents ship</span></div>
+<div class="bar"><b>punchcard</b><span>watch your AI coding agents ship</span><span class="worker" id="worker"></span></div>
 <div class="wrap">
 <div class="addrow">
  <button type="button" id="newbtn" class="ghost"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2v11.6M2.2 8h11.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>New task</button>
@@ -165,6 +177,12 @@ const safeURL=u=>/^(https?:\/\/|\/)/i.test(String(u||""))?u:"#";
 const CAP=20, lim={};
 // 3 bars, filled = clamp(priority,0..3) — exact number stays in the tooltip + modal
 const priIcon=p=>{let s='<span class="pri" title="priority '+(p|0)+'">';for(let i=1;i<=3;i++)s+='<i class="'+(i<=Math.min(3,Math.max(0,p|0))?'on':'')+'"></i>';return s+'</span>';};
+// compact "12s"/"8m"/"3h"/"2d" since a timestamp
+function rel(ts){ if(!ts) return ''; const s=Math.max(0,(Date.now()-new Date(ts))/1000);
+ if(s<60) return Math.floor(s)+'s'; if(s<3600) return Math.floor(s/60)+'m';
+ if(s<86400) return Math.floor(s/3600)+'h'; return Math.floor(s/86400)+'d'; }
+const FRESH=120;  // a /api/next poll newer than this (s) reads as "active"; loosen if your /loop tick is slower
+const STALE=600;  // an in-progress card quiet longer than this (s) tints amber — a gentle "still alive?" hint
 let tasksById={};
 async function load(){
  const tasks=await (await fetch("/api/tasks")).json();
@@ -184,7 +202,11 @@ async function load(){
    const unmet=(t.depends_on||[]).filter(id=>!(tasksById[id]&&tasksById[id].merged));
    if(t.status==='todo'&&unmet.length) h+='<div class="dep">waiting on '+unmet.map(esc).join(', ')+'</div>';
    if(t.merged) h+='<div class="merged">&#10003; merged</div>';
-   if(t.status==='in_progress') h+='<button class="cancel" onclick="event.stopPropagation();cancelTask(\''+esc(t.id)+'\')">Cancel run</button>';
+   if(t.status==='in_progress'){
+    const stale=(Date.now()-new Date(t.updated_at))/1000>STALE;
+    h+='<div class="prog'+(stale?' stale':'')+'"><span class="sp"></span><span class="st">'+esc(t.progress||'working')+'</span><span class="ago">'+rel(t.updated_at)+'</span></div>';
+    h+='<button class="cancel" onclick="event.stopPropagation();cancelTask(\''+esc(t.id)+'\')">Cancel run</button>';
+   }
    if(t.pr_url) h+='<a class="pr" href="'+esc(safeURL(t.pr_url))+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">View PR &rarr;</a>';
    for(const a of (t.artifacts||[])){
     const src=a.replace("/artifacts/","/preview/");
@@ -281,6 +303,15 @@ async function loadControl(){
  b.innerHTML=ctl.paused?"&#9654; Resume":"&#9208; Pause";
  b.classList.toggle("paused",ctl.paused);
  document.getElementById("stopbtn").classList.toggle("on",!!ctl.stopped);
+ renderWorker(ctl.last_poll);
+}
+function renderWorker(lp){
+ const el=document.getElementById("worker"); if(!el) return;
+ if(!lp){ el.className="worker"; el.title="No loop has polled this board yet"; el.innerHTML='<span class="wd"></span>no loop'; return; }
+ const live=(Date.now()-new Date(lp))/1000<FRESH;
+ el.className="worker"+(live?" live":"");
+ el.title="Last loop poll: "+new Date(lp).toLocaleString();
+ el.innerHTML='<span class="wd"></span>'+(live?"active":"idle")+' <span class="ago">&middot; '+rel(lp)+'</span>';
 }
 async function patchControl(body){
  await fetch("/api/control",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});

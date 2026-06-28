@@ -324,3 +324,24 @@ func TestMemoryPostAndSearchViaAPI(t *testing.T) {
 		t.Fatalf("expected 404 after delete, got %d", rec.Code)
 	}
 }
+
+func TestWorkerLastPollViaAPI(t *testing.T) {
+	h := newTestServer(t)
+	get := func() *string {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/control", nil))
+		var out struct {
+			LastPoll *string `json:"last_poll"`
+		}
+		json.Unmarshal(rec.Body.Bytes(), &out)
+		return out.LastPoll
+	}
+	if lp := get(); lp != nil {
+		t.Fatalf("last_poll = %v, want null before any poll", *lp)
+	}
+	// a loop reaching /api/next is the liveness signal
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/api/next", nil))
+	if get() == nil {
+		t.Fatal("last_poll still null after POST /api/next")
+	}
+}

@@ -67,6 +67,12 @@ dependents — only a real merge does. Never scan all done tasks.)
    worktree (step 9), and return outcome=`cancelled`. Do not push or open a PR for a
    cancelled task.
 
+   **Progress (so the board shows the run live):** as you move through the steps, post a
+   one-line current step — `punch update <id> --progress "running tests"`, then
+   `"opening PR"`, `"self-review"`, `"capturing proof"`. It appears on the in-progress
+   card and clears automatically when the task leaves `in_progress`. Cheap — do it at each
+   step so a watcher can tell the agent is alive, not wedged.
+
 4. **(subagent) Implement** in the worktree to satisfy `acceptance`. Run the repo's
    tests. Commit with **Conventional Commits** (`feat:`, `fix:`, `refactor:`, `docs:`,
    `test:`, `chore:` …) — one focused commit per logical change.

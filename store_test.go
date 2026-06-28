@@ -361,3 +361,25 @@ func TestSweepStuck(t *testing.T) {
 		t.Fatalf("stuck task not failed: %v", got.Status)
 	}
 }
+
+func TestPatchProgressClearsWhenNotInProgress(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	task, _ := s.Create(TaskInput{Title: "build"})
+	ip, step := StatusInProgress, "running tests"
+	got, err := s.Patch(task.ID, Patch{Status: &ip, Progress: &step})
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	if got.Progress != "running tests" {
+		t.Fatalf("progress = %q, want %q", got.Progress, "running tests")
+	}
+	// leaving in_progress clears the live step so a finished card carries no stale progress
+	done := StatusDone
+	got, err = s.Patch(task.ID, Patch{Status: &done})
+	if err != nil {
+		t.Fatalf("patch2: %v", err)
+	}
+	if got.Progress != "" {
+		t.Fatalf("progress = %q, want cleared", got.Progress)
+	}
+}

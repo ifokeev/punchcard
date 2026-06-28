@@ -47,7 +47,10 @@ The binary is only half of it — the agents are driven by a Claude Code **plugi
 
 Open the board and watch tasks slide from todo → done in real time. **Click any card**
 for its full brief (description, acceptance criteria, PR, proof of work), or **drag a card
-between columns** to set its status yourself.
+between columns** to set its status yourself. The header shows whether a loop is actually
+polling — **active** / **idle** / **no loop** — and in-progress cards show the agent's
+current step with time since its last activity, so you can tell a working run from a wedged
+one at a glance (agents post steps with `punch update <id> --progress "<step>"`).
 
 ## Control the run
 Steer the loop from the **board** (or the `punch` CLI) without touching the agent
