@@ -179,7 +179,14 @@ document.getElementById("f").onsubmit=async e=>{
  e.preventDefault();
  const fd=new FormData(e.target), body={};
  fd.forEach((v,k)=>body[k]=k==="priority"?Number(v):v);
- await fetch("/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+ let res=await fetch("/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+ if(res.status===409){
+  const d=await res.json().catch(()=>({}));
+  const dups=(d.duplicates||[]).map(t=>t.id+" · "+t.title).join("\n");
+  if(!confirm("A similar active task already exists:\n\n"+dups+"\n\nAdd anyway?")) return; // keep the form so they can edit
+  body.force=true;
+  res=await fetch("/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+ }
  e.target.reset();
  document.getElementById("f").hidden=true; document.getElementById("newbtn").hidden=false;
  load();

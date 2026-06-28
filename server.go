@@ -25,6 +25,7 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 			Title, Description, Acceptance, Repo string
 			Priority                             int
 			DependsOn                            []string `json:"depends_on"`
+			Force                                bool     `json:"force"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			http.Error(w, "bad json", http.StatusBadRequest)
@@ -34,7 +35,19 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 			http.Error(w, "title required", http.StatusBadRequest)
 			return
 		}
-		t, err := s.Create(TaskInput(in))
+		if !in.Force {
+			if dups := s.SimilarActive(in.Title); len(dups) > 0 {
+				writeJSON(w, http.StatusConflict, map[string]any{
+					"error":      "an active task with this title already exists (set force to add anyway)",
+					"duplicates": dups,
+				})
+				return
+			}
+		}
+		t, err := s.Create(TaskInput{
+			Title: in.Title, Description: in.Description, Acceptance: in.Acceptance,
+			Repo: in.Repo, Priority: in.Priority, DependsOn: in.DependsOn,
+		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

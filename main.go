@@ -109,6 +109,7 @@ func cmdAdd(args []string) {
 	repo := fs.String("repo", "", "local repo path")
 	prio := fs.Int("priority", 1, "priority (higher first)")
 	deps := fs.String("depends-on", "", "comma-separated task ids that must be merged before this is claimed")
+	force := fs.Bool("force", false, "add even if a similar active task already exists")
 	fs.Parse(args)
 	if *title == "" {
 		fail("--title required")
@@ -121,8 +122,11 @@ func cmdAdd(args []string) {
 	}
 	code, body, err := doJSON("POST", "/api/tasks", map[string]any{
 		"title": *title, "description": *desc, "acceptance": *acc, "repo": *repo,
-		"priority": *prio, "depends_on": depList,
+		"priority": *prio, "depends_on": depList, "force": *force,
 	})
+	if code == http.StatusConflict {
+		fail("a similar active task already exists (re-run with --force to add anyway):\n%s", body)
+	}
 	if err != nil || code != http.StatusCreated {
 		fail("add failed (%d): %s %v", code, body, err)
 	}

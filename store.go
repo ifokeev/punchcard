@@ -68,6 +68,18 @@ func validID(s string) bool {
 	return true
 }
 
+// activeStatuses are the non-terminal statuses a duplicate check considers — a
+// task that's done/merged/cancelled/failed is closed, so re-filing it is fine.
+var activeStatuses = map[Status]bool{
+	StatusTodo: true, StatusInProgress: true, StatusInReview: true, StatusBlocked: true,
+}
+
+// normalizeTitle lowercases and collapses whitespace so trivially-different
+// titles ("Add  CSV Export" vs "add csv export") compare equal.
+func normalizeTitle(s string) string {
+	return strings.Join(strings.Fields(strings.ToLower(s)), " ")
+}
+
 type TaskInput struct {
 	Title       string
 	Description string
@@ -339,6 +351,25 @@ func (s *Store) PendingMerges() []*Task {
 	for id := range blocking {
 		if d, ok := s.tasks[id]; ok && d.Status == StatusDone && !d.Merged && d.PRURL != "" {
 			out = append(out, d)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// SimilarActive returns active tasks whose normalized title equals title's —
+// the lexical duplicate check for new tasks. Closed tasks are ignored.
+func (s *Store) SimilarActive(title string) []*Task {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	norm := normalizeTitle(title)
+	if norm == "" {
+		return nil
+	}
+	var out []*Task
+	for _, t := range s.tasks {
+		if activeStatuses[t.Status] && normalizeTitle(t.Title) == norm {
+			out = append(out, t)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })

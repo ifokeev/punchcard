@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -62,6 +63,35 @@ func TestNextReturnsIDThenEmpty(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/next", nil))
 	if rec.Code != http.StatusNoContent { // drained queue
 		t.Fatalf("want 204 on empty, got %d", rec.Code)
+	}
+}
+
+func TestCreateBlocksDuplicateViaAPI(t *testing.T) {
+	h := newTestServer(t)
+	mk := func(payload any) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(payload)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/tasks", bytes.NewReader(b)))
+		return rec
+	}
+	if rec := mk(map[string]any{"title": "Add CSV export"}); rec.Code != http.StatusCreated {
+		t.Fatalf("first create: want 201, got %d", rec.Code)
+	}
+	// same title (normalized) → 409 with the duplicate listed
+	rec := mk(map[string]any{"title": "  add CSV   export "})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("duplicate: want 409, got %d", rec.Code)
+	}
+	var resp struct {
+		Duplicates []Task `json:"duplicates"`
+	}
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	if len(resp.Duplicates) != 1 || resp.Duplicates[0].ID != "t_0001" {
+		t.Fatalf("409 should list the dup, got %+v", resp.Duplicates)
+	}
+	// force → created
+	if rec := mk(map[string]any{"title": "Add CSV export", "force": true}); rec.Code != http.StatusCreated {
+		t.Fatalf("force create: want 201, got %d", rec.Code)
 	}
 }
 
@@ -128,7 +158,7 @@ func TestBatchClaimViaAPI(t *testing.T) {
 	patch, _ := json.Marshal(map[string]any{"concurrency": 2})
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("PATCH", "/api/control", bytes.NewReader(patch)))
 	for i := 0; i < 3; i++ {
-		body, _ := json.Marshal(map[string]any{"title": "t", "priority": i})
+		body, _ := json.Marshal(map[string]any{"title": fmt.Sprintf("task %d", i), "priority": i})
 		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/api/tasks", bytes.NewReader(body)))
 	}
 

@@ -291,6 +291,27 @@ func TestDeleteTask(t *testing.T) {
 	}
 }
 
+func TestSimilarActive(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.now = fixedClock()
+	s.Create(TaskInput{Title: "Add CSV export"})
+	// normalization: case + extra whitespace still matches
+	if got := s.SimilarActive("  add   CSV    EXPORT "); len(got) != 1 {
+		t.Fatalf("normalized match: want 1, got %d", len(got))
+	}
+	// unrelated title: no match
+	if got := s.SimilarActive("Dark mode toggle"); got != nil {
+		t.Fatalf("unrelated should not match, got %+v", got)
+	}
+	// a closed (done) task with the same title must NOT block a re-file
+	done, _ := s.Create(TaskInput{Title: "Old feature"})
+	st := StatusDone
+	s.Patch(done.ID, Patch{Status: &st})
+	if got := s.SimilarActive("Old feature"); got != nil {
+		t.Fatalf("closed task should not count as duplicate, got %+v", got)
+	}
+}
+
 func TestReplaceAndEmpty(t *testing.T) {
 	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
 	s.now = fixedClock()
