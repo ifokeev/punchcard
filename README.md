@@ -99,10 +99,12 @@ the dependents. So you can file a whole chain up front and let it land in order.
 |---|---|
 | Local | `punch serve` (binds 127.0.0.1) |
 | Private mesh | `punch serve --addr 0.0.0.0:8080 --token $TOK` + Tailscale |
+| Public, your own TLS | `punch serve --addr 127.0.0.1:8080 --token $TOK` behind Caddy/nginx (auto-HTTPS) |
 | Public zero-trust | the above + Cloudflare Tunnel + Access |
 
 > Binding a non-loopback address without `--token` is refused (pass `--insecure` to
-> override). Put Tailscale/Cloudflare in front; the token is defense-in-depth.
+> override). Behind a mesh the token is defense-in-depth; exposed with just your own
+> TLS it's your **primary** auth — see [Public over your own TLS](#public-over-your-own-tls-no-mesh) below.
 >
 > With `--token` set, the CLI/loop send it as a bearer header; **opening the board in a
 > browser prompts you for it** — leave the username blank and paste the token as the
@@ -117,6 +119,28 @@ punch config show   # confirm settings
 This writes `~/.punch/config.json` (mode 0600). All subsequent `punch` calls — including
 those made by dispatched subagents — read the file automatically. The environment
 variables `PUNCH_URL` and `PUNCH_TOKEN` always override the config file when set.
+
+### Public over your own TLS (no mesh)
+No Tailscale/Cloudflare? Then the **token is your only auth**, so two rules are
+non-negotiable: a strong random token, and **HTTPS in front**. A bearer token over plain
+`http://` on the public internet is sniffable, and whoever grabs it can drive your agents.
+
+Run punch on loopback and let a reverse proxy terminate TLS — Caddy gets a cert
+automatically:
+```caddy
+# Caddyfile — point a domain at the box first
+board.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+```bash
+# on the server (run punch under systemd so it survives reboots)
+SECRET=$(openssl rand -hex 32)            # treat it like a password
+punch serve --addr 127.0.0.1:8080 --token "$SECRET"
+```
+Caddy forwards the `Authorization` header through unchanged, so the worker's **bearer**
+token and your **browser Basic** login both reach punch. Point the worker at
+`https://board.example.com` with that `$SECRET` (as above); rotate the token if it leaks.
 
 ### Multiple boards (profiles)
 Running a board per project? Define named profiles and switch with one env var:
