@@ -17,3 +17,5 @@ docs/superpowers/
 
 # Third-party agent skills installed via `npx skills` (not part of punchcard)
 .agents/
+.claude/
+skills-lock.json
