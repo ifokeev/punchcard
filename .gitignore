@@ -14,3 +14,6 @@ docs/superpowers/
 /memory.json
 /control.json
 /artifacts/
+
+# Third-party agent skills installed via `npx skills` (not part of punchcard)
+.agents/
