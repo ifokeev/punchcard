@@ -139,10 +139,36 @@
  .field img,.field video{display:block;width:100%;margin-top:8px;border:1px solid var(--line);border-radius:6px}
  .field .file{display:block;margin-top:6px;font-size:13px;color:var(--mut);word-break:break-all}
  .modal .ts{display:flex;gap:22px;font-size:13px;color:var(--faint);border-top:1px solid var(--line);padding-top:14px}
+ /* board / memory view tabs */
+ .tabs{display:flex;gap:4px;margin-bottom:24px}
+ .tab{font-family:inherit;font-size:13px;font-weight:500;color:var(--mut);background:none;border:none;padding:7px 15px;border-radius:980px;cursor:pointer;transition:color .2s var(--ease),background .2s var(--ease)}
+ .tab:hover{color:var(--ink)}
+ .tab.on{color:var(--ink);background:var(--surface-2);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+ /* memory view: browse the agents' saved notes */
+ .memhead{display:flex;align-items:center;gap:14px;margin-bottom:20px}
+ .memhead input{max-width:440px}
+ .memct{font-size:13px;color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+ #memlist{display:grid;gap:12px;max-width:880px}
+ .note{position:relative;border:1px solid var(--line);border-radius:12px;padding:16px 18px;background:var(--surface-1);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+ .note .nt{font-size:14px;font-weight:600;letter-spacing:-.006em;color:var(--ink);margin:0 0 7px;padding-right:84px}
+ .note .nb{font-size:13px;line-height:1.55;color:var(--sec);white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto}
+ .note .meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px;font-size:12px;color:var(--mut)}
+ .note .repo{color:var(--mut)}
+ .note .tag{font-size:11px;font-weight:500;color:var(--sec);background:var(--surface-2);border:1px solid var(--line);border-radius:980px;padding:2px 9px}
+ .note .when{color:var(--faint)}
+ .note .sup{color:var(--c-blocked);font-weight:500}
+ .note .ndel{position:absolute;top:13px;right:14px;font-family:inherit;font-size:12px;font-weight:500;color:var(--c-failed);background:none;border:1px solid var(--line);border-radius:7px;padding:4px 10px;cursor:pointer;transition:border-color .15s}
+ .note .ndel:hover{border-color:var(--c-failed)}
+ .memempty{color:var(--faint);font-size:14px;padding:4px 0}
 </style></head>
 <body>
 <div class="bar"><b>punchcard</b><span class="ver mono" id="ver"></span><span>watch your AI coding agents ship</span><span class="worker" id="worker"></span></div>
 <div class="wrap">
+<div class="tabs">
+ <button id="tab-board" class="tab on" onclick="showView('board')">Board</button>
+ <button id="tab-mem" class="tab" onclick="showView('mem')">Memory</button>
+</div>
+<div id="boardview">
 <div class="addrow">
  <button type="button" id="newbtn" class="ghost"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2v11.6M2.2 8h11.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>New task</button>
  <span class="ctl">
@@ -165,6 +191,14 @@
  </div>
 </form>
 <div class="cols" id="board"></div>
+</div>
+<div id="memview" hidden>
+ <div class="memhead">
+  <input id="memq" type="search" placeholder="Search memory — title, body, tags…">
+  <span class="memct" id="memct"></span>
+ </div>
+ <div id="memlist"></div>
+</div>
 </div>
 <div class="overlay" id="overlay" hidden onclick="if(event.target===this)closeCard()">
  <div class="modal"><button class="x" onclick="closeCard()" aria-label="Close">&times;</button><div id="modalbody"></div></div>
@@ -335,6 +369,42 @@ async function stopAll(){
  loadControl(); load();
 }
 document.getElementById("pausebtn").onclick=togglePause;
+
+// --- memory view: browse / search / delete the agents' saved notes ---
+function showView(v){
+ const board=v==='board';
+ document.getElementById('boardview').hidden=!board;
+ document.getElementById('memview').hidden=board;
+ document.getElementById('tab-board').classList.toggle('on',board);
+ document.getElementById('tab-mem').classList.toggle('on',!board);
+ if(!board) loadMemory();
+}
+let memTimer=null;
+async function loadMemory(){
+ const q=document.getElementById('memq').value.trim();
+ let notes=[];
+ try{ notes=await (await fetch('/api/memory'+(q?'?q='+encodeURIComponent(q):''))).json()||[]; }catch(e){ notes=[]; }
+ document.getElementById('memct').textContent=notes.length+(notes.length===1?' note':' notes');
+ const list=document.getElementById('memlist');
+ if(!notes.length){ list.innerHTML='<div class="memempty">'+(q?'No notes match.':'No memory saved yet — agents add notes as they work.')+'</div>'; return; }
+ let html='';
+ for(const n of notes){
+  html+='<div class="note"><button class="ndel" onclick="delNote(\''+esc(n.id)+'\')">Delete</button>';
+  html+='<div class="nt">'+esc(n.title)+(n.superseded_by?' <span class="sup">&middot; superseded</span>':'')+'</div>';
+  if(n.body) html+='<div class="nb">'+esc(n.body)+'</div>';
+  html+='<div class="meta"><span class="mono">'+esc(n.id)+'</span>';
+  if(n.repo) html+='<span class="repo mono">'+esc(n.repo)+'</span>';
+  for(const t of (n.tags||[])) html+='<span class="tag">'+esc(t)+'</span>';
+  html+='<span class="when">'+esc(fmtDate(n.updated_at||n.created_at))+'</span></div></div>';
+ }
+ list.innerHTML=html;
+}
+async function delNote(id){
+ if(!confirm('Delete this memory note? This is permanent.')) return;
+ await fetch('/api/memory/'+encodeURIComponent(id),{method:'DELETE'});
+ loadMemory();
+}
+document.getElementById('memq').oninput=()=>{ clearTimeout(memTimer); memTimer=setTimeout(loadMemory,250); };
 
 fetch("/api/version").then(r=>r.json()).then(d=>{const e=document.getElementById("ver"); if(e&&d.version) e.textContent=d.version;}).catch(()=>{});
 loadControl(); load(); setInterval(()=>{ if(!dragging){loadControl();load();} },2000);

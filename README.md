@@ -52,6 +52,10 @@ polling — **active** / **idle** / **no loop** — and in-progress cards show t
 current step with time since its last activity, so you can tell a working run from a wedged
 one at a glance (agents post steps with `punch update <id> --progress "<step>"`).
 
+The **Memory** tab shows what the agents have saved across runs — search the notes (title,
+body, tags) and delete stale ones. It's their shared long-term memory: they write it with
+`punch memory add` and recall it per task with `punch memory search`.
+
 ## Updating
 The **binary** and the Claude Code **plugin** (the two skills + `/punch-loop`) update
 independently.
