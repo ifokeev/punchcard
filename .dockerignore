@@ -1,0 +1,17 @@
+# keep the build context small — only the Go source is needed
+.git
+.github
+dist/
+punch
+punchcard
+*.md
+docs/
+# local runtime data (never bake into the image)
+tasks.json
+memory.json
+control.json
+artifacts/
+.DS_Store
+.agents/
+.claude/
+skills-lock.json

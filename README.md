@@ -172,6 +172,20 @@ Caddy forwards the `Authorization` header through unchanged, so the worker's **b
 token and your **browser Basic** login both reach punch. Point the worker at
 `https://board.example.com` with that `$SECRET` (as above); rotate the token if it leaks.
 
+### Run with Docker
+The board ships as a tiny distroless image (just the static binary):
+```sh
+docker run -d --name punchcard -p 8080:8080 \
+  -e PUNCH_TOKEN=$(openssl rand -hex 32) \
+  -v punchdata:/data \
+  ghcr.io/ifokeev/punchcard:latest
+```
+`/data` holds tasks/memory/artifacts — the named volume persists them across restarts.
+`serve` reads `PORT` and `PUNCH_TOKEN` from the env, so the same image runs as-is on
+Render/Fly/Railway (they inject `PORT`). The image speaks plain HTTP — put TLS in front for
+public use (above). Tags: `:latest`, `:0.8`, `:0.8.0`; `docker compose` works the same with a
+`volumes:` mount.
+
 ### Multiple boards (profiles)
 Running a board per project? Define named profiles and switch with one env var:
 ```bash

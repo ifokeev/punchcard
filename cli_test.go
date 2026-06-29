@@ -54,3 +54,30 @@ func TestCmdImportReplaceFlagOrder(t *testing.T) {
 		t.Fatalf("--replace should have dropped the pre-existing task")
 	}
 }
+
+func TestResolveServeAddr(t *testing.T) {
+	// PORT used only when --addr was not explicitly given (container/PaaS default)
+	if got := resolveServeAddr("127.0.0.1:8080", false, "10000"); got != "0.0.0.0:10000" {
+		t.Fatalf("PORT fallback: got %q, want 0.0.0.0:10000", got)
+	}
+	// an explicit --addr always wins over PORT
+	if got := resolveServeAddr("127.0.0.1:9000", true, "10000"); got != "127.0.0.1:9000" {
+		t.Fatalf("explicit addr should win: got %q", got)
+	}
+	// no PORT -> keep the flag/default
+	if got := resolveServeAddr("127.0.0.1:8080", false, ""); got != "127.0.0.1:8080" {
+		t.Fatalf("no PORT: got %q", got)
+	}
+}
+
+func TestResolveServeToken(t *testing.T) {
+	if got := resolveServeToken("flagtok", "envtok"); got != "flagtok" {
+		t.Fatalf("flag token should win: got %q", got)
+	}
+	if got := resolveServeToken("", "envtok"); got != "envtok" {
+		t.Fatalf("env fallback: got %q", got)
+	}
+	if got := resolveServeToken("", ""); got != "" {
+		t.Fatalf("no token should stay empty: got %q", got)
+	}
+}

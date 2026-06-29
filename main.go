@@ -79,7 +79,18 @@ func cmdServe(args []string) {
 	maxUp := fs.Int64("max-upload", maxUploadDefault, "max upload bytes")
 	fs.Parse(args)
 
-	if err := validateBind(*addr, *token, *insecure); err != nil {
+	// Container/PaaS env fallbacks (flags always win): PORT -> bind 0.0.0.0:$PORT when
+	// --addr wasn't given; PUNCH_TOKEN -> bearer token when --token wasn't given.
+	addrSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "addr" {
+			addrSet = true
+		}
+	})
+	bindAddr := resolveServeAddr(*addr, addrSet, os.Getenv("PORT"))
+	authToken := resolveServeToken(*token, os.Getenv("PUNCH_TOKEN"))
+
+	if err := validateBind(bindAddr, authToken, *insecure); err != nil {
 		fail("%v", err)
 	}
 	maxUpload = *maxUp
@@ -102,9 +113,26 @@ func cmdServe(args []string) {
 
 	var h http.Handler = newMux(s, ms, cstore, *originBase)
 	h = proxyMiddleware(*trustedProxy)(h)
-	h = tokenMiddleware(*token)(h)
-	log.Printf("punchcard %s serving on %s (auth=%v)", version, *addr, *token != "")
-	log.Fatal(http.ListenAndServe(*addr, h))
+	h = tokenMiddleware(authToken)(h)
+	log.Printf("punchcard %s serving on %s (auth=%v)", version, bindAddr, authToken != "")
+	log.Fatal(http.ListenAndServe(bindAddr, h))
+}
+
+// resolveServeAddr applies the PORT env fallback for containers/PaaS: when --addr wasn't
+// given and PORT is set, bind all interfaces on $PORT; otherwise use the flag/default.
+func resolveServeAddr(flagAddr string, addrSet bool, portEnv string) string {
+	if !addrSet && portEnv != "" {
+		return "0.0.0.0:" + portEnv
+	}
+	return flagAddr
+}
+
+// resolveServeToken falls back to PUNCH_TOKEN when --token wasn't given (the flag wins).
+func resolveServeToken(flagToken, envToken string) string {
+	if flagToken != "" {
+		return flagToken
+	}
+	return envToken
 }
 
 func cmdAdd(args []string) {
