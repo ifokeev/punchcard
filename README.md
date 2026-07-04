@@ -61,9 +61,11 @@ body, tags) and delete stale ones. It's their shared long-term memory: they writ
 `punch memory add` and recall it per task with `punch memory search`.
 
 ## Use it with Codex CLI
-The binary and board are agent-agnostic — they drive **OpenAI Codex CLI** too. Codex uses
-the same `SKILL.md` format, so the two skills port over, and there are two ways to run the
-loop: **`/goal`** (Codex's autonomous "Ralph Loop") for a one-shot drain, or a
+<details>
+<summary>The binary and board drive <b>OpenAI Codex CLI</b> too — same skills, plus <code>/goal</code> or a heartbeat loop.</summary>
+
+Codex uses the same `SKILL.md` format, so the two skills port over, and there are two ways
+to run the loop: **`/goal`** (Codex's autonomous "Ralph Loop") for a one-shot drain, or a
 **`punch-loop.sh`** heartbeat for an always-on worker. Copy the skills and go:
 ```sh
 cp -R codex/skills/punchcard-engineer codex/skills/punchcard-pm ~/.codex/skills/
@@ -71,6 +73,7 @@ punch config set --url https://your-board.example.com --token <token>
 ./codex/punch-loop.sh          # standing worker; or run /goal for a one-shot drain
 ```
 Full setup, the `/goal` prompt, and caveats: [`codex/README.md`](codex/README.md).
+</details>
 
 ## Updating
 The **binary** and the Claude Code **plugin** (the two skills + `/punch-loop`) update
