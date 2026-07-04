@@ -102,3 +102,26 @@ func fail(format string, a ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", a...)
 	os.Exit(1)
 }
+
+// downloadTo fetches an authenticated path (e.g. /artifacts/<id>/refs/x.png) to a local file.
+func downloadTo(path, dst string) error {
+	req, err := authReq("GET", path, nil, "")
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("status %d for %s", resp.StatusCode, path)
+	}
+	f, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = io.Copy(f, resp.Body)
+	return err
+}

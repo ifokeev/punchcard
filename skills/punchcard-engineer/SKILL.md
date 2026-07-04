@@ -73,6 +73,11 @@ dependents — only a real merge does. Never scan all done tasks.)
    card and clears automatically when the task leaves `in_progress`. Cheap — do it at each
    step so a watcher can tell the agent is alive, not wedged.
 
+   **Reference images:** if the task has `images` (check `punch get <id>`), run
+   `punch pull-images <id>` — it downloads them to a temp dir and prints the paths — then
+   **Read each path** before implementing. They're the mockups/screenshots of what to build;
+   treat them as part of the spec.
+
 4. **(subagent) Implement** in the worktree to satisfy `acceptance`. Run the repo's
    tests. Commit with **Conventional Commits** (`feat:`, `fix:`, `refactor:`, `docs:`,
    `test:`, `chore:` …) — one focused commit per logical change.

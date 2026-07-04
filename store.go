@@ -35,6 +35,7 @@ type Task struct {
 	PRURL       string    `json:"pr_url"`
 	Branch      string    `json:"branch"`
 	Artifacts   []string  `json:"artifacts"`
+	Images      []string  `json:"images,omitempty"` // user-attached reference images (mockups/screenshots) for the implementer
 	Note        string    `json:"note"`
 	Progress    string    `json:"progress,omitempty"`   // agent-posted current step while in_progress ("running tests")
 	DependsOn   []string  `json:"depends_on,omitempty"` // task ids that must be merged before this can be claimed
@@ -325,6 +326,24 @@ func (s *Store) Attach(id, relURL string) (*Task, error) {
 	t.UpdatedAt = s.now()
 	if err := s.save(); err != nil {
 		t.Artifacts = t.Artifacts[:len(t.Artifacts)-1]
+		return nil, err
+	}
+	return t, nil
+}
+
+// AttachImage appends a reference-image URL (a mockup/screenshot the user attached as
+// input for the implementer) — kept separate from proof-of-work Artifacts.
+func (s *Store) AttachImage(id, relURL string) (*Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return nil, errNotFound
+	}
+	t.Images = append(t.Images, relURL)
+	t.UpdatedAt = s.now()
+	if err := s.save(); err != nil {
+		t.Images = t.Images[:len(t.Images)-1]
 		return nil, err
 	}
 	return t, nil

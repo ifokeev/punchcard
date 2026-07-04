@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,7 +20,7 @@ var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("usage: punch <serve|add|next|update|attach|cancel|list|get|rm|pause|resume|stop|concurrency|export|import|memory|config|version> [flags]")
+		fmt.Println("usage: punch <serve|add|next|update|attach|pull-images|cancel|list|get|rm|pause|resume|stop|concurrency|export|import|memory|config|version> [flags]")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
@@ -35,6 +36,8 @@ func main() {
 		cmdUpdate(os.Args[2:])
 	case "attach":
 		cmdAttach(os.Args[2:])
+	case "pull-images":
+		cmdPullImages(os.Args[2:])
 	case "cancel":
 		cmdCancel(os.Args[2:])
 	case "list":
@@ -306,6 +309,46 @@ func cmdAttach(args []string) {
 		fail("attach failed (%d): %s %v", code, body, err)
 	}
 	fmt.Println(string(body))
+}
+
+// cmdPullImages downloads a task's reference images to local files and prints their paths,
+// so the engineer subagent can Read them (i.e. see the mockup/screenshot) before implementing.
+func cmdPullImages(args []string) {
+	if len(args) < 1 {
+		fail("usage: punch pull-images <id> [--dir <dir>]")
+	}
+	id := args[0] // positional-first; flags follow
+	fs := flag.NewFlagSet("pull-images", flag.ExitOnError)
+	dir := fs.String("dir", "", "directory to write images into (default: a temp dir)")
+	fs.Parse(args[1:])
+
+	code, body, err := doJSON("GET", "/api/tasks/"+id, nil)
+	if err != nil || code != http.StatusOK {
+		fail("fetch task failed (%d): %s %v", code, body, err)
+	}
+	var t struct {
+		Images []string `json:"images"`
+	}
+	if err := json.Unmarshal(body, &t); err != nil {
+		fail("bad task json: %v", err)
+	}
+	if len(t.Images) == 0 {
+		return // no reference images — print nothing so callers can cleanly no-op
+	}
+	outDir := *dir
+	if outDir == "" {
+		outDir = filepath.Join(os.TempDir(), "punch-images-"+id)
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		fail("mkdir %s: %v", outDir, err)
+	}
+	for _, u := range t.Images {
+		dst := filepath.Join(outDir, filepath.Base(u))
+		if err := downloadTo(u, dst); err != nil {
+			fail("download %s: %v", u, err)
+		}
+		fmt.Println(dst)
+	}
 }
 
 func cmdList(args []string) {

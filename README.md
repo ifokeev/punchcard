@@ -52,6 +52,10 @@ polling — **active** / **idle** / **no loop** — and in-progress cards show t
 current step with time since its last activity, so you can tell a working run from a wedged
 one at a glance (agents post steps with `punch update <id> --progress "<step>"`).
 
+**Attach reference images** to a card — open it and paste a screenshot or **+ Add image** to
+upload a mockup. The engineer agent runs `punch pull-images <id>` and **Reads** them before
+implementing (kept separate from proof-of-work), so "build this design" tasks just work.
+
 The **Memory** tab shows what the agents have saved across runs — search the notes (title,
 body, tags) and delete stale ones. It's their shared long-term memory: they write it with
 `punch memory add` and recall it per task with `punch memory search`.

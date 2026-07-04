@@ -160,6 +160,14 @@
  .note .ndel{position:absolute;top:13px;right:14px;font-family:inherit;font-size:12px;font-weight:500;color:var(--c-failed);background:none;border:1px solid var(--line);border-radius:7px;padding:4px 10px;cursor:pointer;transition:border-color .15s}
  .note .ndel:hover{border-color:var(--c-failed)}
  .memempty{color:var(--faint);font-size:14px;padding:4px 0}
+ /* reference images: user-attached mockups/screenshots (input for the implementer) */
+ .field .refs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+ .field .refs img{width:120px;max-height:120px;object-fit:cover;margin:0;border:1px solid var(--line);border-radius:8px;display:block}
+ .refadd{display:flex;align-items:center;gap:10px}
+ .imgadd{font-family:inherit;font-size:13px;font-weight:500;color:var(--ink);background:var(--surface-1);border:1px solid var(--line);border-radius:8px;padding:7px 13px;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+ .imgadd:hover{background:var(--surface-2);border-color:var(--line-strong)}
+ .refadd .hint{font-size:12px;color:var(--faint)}
+ .card .m .imgc{display:inline-flex;align-items:center;gap:3px;color:var(--mut)}
 </style></head>
 <body>
 <div class="bar"><b>punchcard</b><span class="ver mono" id="ver"></span><span>watch your AI coding agents ship</span><span class="worker" id="worker"></span></div>
@@ -219,6 +227,7 @@ function rel(ts){ if(!ts) return ''; const s=Math.max(0,(Date.now()-new Date(ts)
 const FRESH=120;  // a /api/next poll newer than this (s) reads as "active"; loosen if your /loop tick is slower
 const STALE=600;  // an in-progress card quiet longer than this (s) tints amber — a gentle "still alive?" hint
 let tasksById={};
+let openCardId=null; // the task whose modal is open (for paste-to-attach)
 async function load(){
  const tasks=await (await fetch("/api/tasks")).json();
  tasksById={}; for(const t of tasks) tasksById[t.id]=t;
@@ -233,7 +242,8 @@ async function load(){
   let html='<h2><span class="dot dot-'+c+'"></span>'+LABELS[c]+'<span class="ct mono">'+all.length+'</span></h2>';
   for(const t of items){
    let h='<div class="card s-'+t.status+'" draggable="true" onclick="openCard(\''+esc(t.id)+'\')" ondragstart="dragStart(event,\''+esc(t.id)+'\')" ondragend="dragEnd(event)"><button class="del" onclick="event.stopPropagation();delTask(\''+esc(t.id)+'\')" title="Delete">&times;</button><div class="t">'+esc(t.title)+'</div>';
-   h+='<div class="m">'+priIcon(t.priority||0)+'<span class="mono">'+esc(t.id)+'</span></div>';
+   const nimg=(t.images||[]).length;
+   h+='<div class="m">'+priIcon(t.priority||0)+'<span class="mono">'+esc(t.id)+'</span>'+(nimg?'<span class="imgc" title="'+nimg+' reference image(s)"><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="5.5" cy="6" r="1.2" fill="currentColor"/><path d="M2 12l3.5-3.5 2.5 2.5 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>'+nimg+'</span>':'')+'</div>';
    const unmet=(t.depends_on||[]).filter(id=>!(tasksById[id]&&tasksById[id].merged));
    if(t.status==='todo'&&unmet.length) h+='<div class="dep">waiting on '+unmet.map(esc).join(', ')+'</div>';
    if(t.merged) h+='<div class="merged">&#10003; merged</div>';
@@ -304,6 +314,14 @@ function openCard(id){
  b+='<h2>'+esc(t.title)+'</h2>';
  b+=field('Description',t.description);
  b+=field('Acceptance criteria',t.acceptance);
+ { const imgs=t.images||[];
+   let ib='<div class="field"><h3>Reference images</h3>';
+   if(imgs.length){ ib+='<div class="refs">';
+    for(const a of imgs){ const src=a.replace("/artifacts/","/preview/");
+     ib+='<a href="'+esc(safeURL(src))+'" target="_blank" rel="noopener noreferrer"><img src="'+esc(safeURL(src))+'"></a>'; }
+    ib+='</div>'; }
+   ib+='<div class="refadd"><input type="file" id="imgfile" accept="image/*" hidden><button type="button" class="imgadd" onclick="document.getElementById(\'imgfile\').click()">+ Add image</button><span class="hint">or paste a screenshot</span></div></div>';
+   b+=ib; }
  if((t.depends_on||[]).length){
   const lines=t.depends_on.map(id=>{const d=tasksById[id];return id+' — '+(!d?'unknown':d.merged?'merged':d.status);}).join('\n');
   b+=field('Depends on',lines,true);
@@ -324,9 +342,23 @@ function openCard(id){
  b+='<div class="ts"><span>created '+esc(fmtDate(t.created_at))+'</span><span>updated '+esc(fmtDate(t.updated_at))+'</span></div>';
  document.getElementById('modalbody').innerHTML=b;
  document.getElementById('overlay').hidden=false;
+ openCardId=id;
+ { const fi=document.getElementById('imgfile'); if(fi) fi.onchange=()=>{ if(fi.files&&fi.files[0]) uploadImage(id,fi.files[0]); }; }
 }
-function closeCard(){ document.getElementById('overlay').hidden=true; }
+function closeCard(){ document.getElementById('overlay').hidden=true; openCardId=null; }
+async function uploadImage(id,file){
+ if(!file) return;
+ const fd=new FormData(); fd.append('file',file,file.name||'pasted.png');
+ const res=await fetch('/api/tasks/'+encodeURIComponent(id)+'/images',{method:'POST',body:fd});
+ if(!res.ok){ alert('Image upload failed ('+res.status+')'); return; }
+ await load(); openCard(id); // re-render the modal with the new image
+}
 document.addEventListener('keydown',e=>{ if(e.key==='Escape')closeCard(); });
+document.addEventListener('paste',e=>{
+ if(document.getElementById('overlay').hidden||!openCardId) return;
+ const items=(e.clipboardData&&e.clipboardData.items)||[];
+ for(const it of items){ if(it.type.indexOf('image')===0){ const f=it.getAsFile(); if(f){ uploadImage(openCardId,f); e.preventDefault(); return; } } }
+});
 
 // --- run control: pause/resume + concurrency, mirrored from the server ---
 let ctl={paused:false,concurrency:3};

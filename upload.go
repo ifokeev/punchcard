@@ -37,43 +37,66 @@ func absURL(r *http.Request, originBase, rel string) string {
 	return fmt.Sprintf("%s://%s%s", scheme, host, rel)
 }
 
-func registerUploadRoutes(mux *http.ServeMux, s *Store, originBase string) {
-	mux.HandleFunc("POST /api/tasks/{id}/artifacts", func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		if _, ok := s.Get(id); !ok {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-		r.Body = http.MaxBytesReader(w, r.Body, maxUpload) // cap BEFORE parse
-		file, header, err := r.FormFile("file")
-		if err != nil {
-			http.Error(w, "expected multipart field 'file': "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		defer file.Close()
-		name := safeName(header.Filename)
-		dir := filepath.Join("artifacts", safeName(id)) // id also sanitized
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		dst, err := os.Create(filepath.Join(dir, name))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if _, err := io.Copy(dst, file); err != nil {
-			dst.Close()
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+// saveTaskUpload stores a multipart 'file' for task id under artifacts/<id>[/subdir],
+// records it via record (s.Attach or s.AttachImage), and returns the relative URL. On any
+// failure it writes the HTTP error and returns ok=false.
+func saveTaskUpload(w http.ResponseWriter, r *http.Request, s *Store, subdir string,
+	record func(id, relURL string) (*Task, error)) (string, bool) {
+	id := r.PathValue("id")
+	if _, ok := s.Get(id); !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return "", false
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxUpload) // cap BEFORE parse
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "expected multipart field 'file': "+err.Error(), http.StatusBadRequest)
+		return "", false
+	}
+	defer file.Close()
+	name := safeName(header.Filename)
+	relDir := safeName(id) // id also sanitized
+	if subdir != "" {
+		relDir += "/" + subdir
+	}
+	dir := filepath.Join("artifacts", filepath.FromSlash(relDir))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return "", false
+	}
+	dst, err := os.Create(filepath.Join(dir, name))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return "", false
+	}
+	if _, err := io.Copy(dst, file); err != nil {
 		dst.Close()
-		rel := "/artifacts/" + safeName(id) + "/" + name
-		if _, err := s.Attach(id, rel); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return "", false
+	}
+	dst.Close()
+	rel := "/artifacts/" + relDir + "/" + name
+	if _, err := record(id, rel); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return "", false
+	}
+	return rel, true
+}
+
+func registerUploadRoutes(mux *http.ServeMux, s *Store, originBase string) {
+	// Proof-of-work files the agent attaches (screenshots, test output).
+	mux.HandleFunc("POST /api/tasks/{id}/artifacts", func(w http.ResponseWriter, r *http.Request) {
+		if rel, ok := saveTaskUpload(w, r, s, "", s.Attach); ok {
+			writeJSON(w, http.StatusCreated, map[string]string{"url": rel, "abs": absURL(r, originBase, rel)})
 		}
-		writeJSON(w, http.StatusCreated, map[string]string{"url": rel, "abs": absURL(r, originBase, rel)})
+	})
+
+	// Reference images the USER attaches as input for the implementer (mockups/screenshots),
+	// stored under artifacts/<id>/refs and tracked in task.images (separate from proof of work).
+	mux.HandleFunc("POST /api/tasks/{id}/images", func(w http.ResponseWriter, r *http.Request) {
+		if rel, ok := saveTaskUpload(w, r, s, "refs", s.AttachImage); ok {
+			writeJSON(w, http.StatusCreated, map[string]string{"url": rel, "abs": absURL(r, originBase, rel)})
+		}
 	})
 
 	// Static, read-only, force-download so attacker HTML/SVG can't run as active content.
