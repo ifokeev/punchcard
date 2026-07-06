@@ -13,6 +13,20 @@
   --c-todo:#8a8f98;--c-in_progress:#e2b340;--c-in_review:#5e6ad2;
   --c-done:#27a644;--c-blocked:#e0973a;--c-failed:#eb5757;--c-cancelled:#62666d;
  }
+ /* light theme (Multica-style Linear light) — opt-in via data-theme=light, dark stays default */
+ :root[data-theme=light]{
+  --canvas:#f6f7f9;--surface-1:#ffffff;--surface-2:#eef0f3;
+  --ink:#111214;--sec:#3c4149;--mut:#6b7280;--faint:#9ca3af;
+  --line:rgba(0,0,0,.09);--line-strong:rgba(0,0,0,.16);--accent:#5e6ad2;--accent-hover:#4c57c0;
+  --c-in_progress:#d9930a;
+ }
+ :root[data-theme=light] body::before{background:radial-gradient(1100px 620px at 50% -8%,rgba(94,106,210,.06),transparent 62%)}
+ :root[data-theme=light] .card{box-shadow:0 1px 2px rgba(0,0,0,.05),0 1px 3px rgba(0,0,0,.03)}
+ :root[data-theme=light] .card:hover{box-shadow:0 2px 4px rgba(0,0,0,.07),0 4px 10px rgba(0,0,0,.05)}
+ :root[data-theme=light] .tab.on{box-shadow:inset 0 0 0 1px var(--line)}
+ :root[data-theme=light] .note{box-shadow:0 1px 2px rgba(0,0,0,.04)}
+ :root[data-theme=light] .modal{box-shadow:0 24px 60px -20px rgba(0,0,0,.35)}
+ :root[data-theme=light] .overlay{background:rgba(20,22,30,.32)}
  *{box-sizing:border-box}
  body{margin:0;background:var(--canvas);color:var(--ink);
   font:16px/1.5 "SF Pro Display",-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -168,6 +182,16 @@
  .imgadd:hover{background:var(--surface-2);border-color:var(--line-strong)}
  .refadd .hint{font-size:12px;color:var(--faint)}
  .card .m .imgc{display:inline-flex;align-items:center;gap:3px;color:var(--mut)}
+ /* Multica-style column color: faint body wash + tinted header pill on the active states */
+ .col.c-in_progress{background:color-mix(in srgb,var(--c-in_progress) 6%,transparent);border-radius:12px}
+ .col.c-in_review{background:color-mix(in srgb,var(--c-in_review) 6%,transparent);border-radius:12px}
+ .col.c-done{background:color-mix(in srgb,var(--c-done) 5%,transparent);border-radius:12px}
+ .col>h2 .hp{display:inline-flex;align-items:center;gap:7px}
+ .col.c-in_progress>h2 .hp,.col.c-in_review>h2 .hp,.col.c-done>h2 .hp{padding:2px 9px;border-radius:7px;color:var(--ink)}
+ .col.c-in_progress>h2 .hp{background:color-mix(in srgb,var(--c-in_progress) 18%,transparent)}
+ .col.c-in_review>h2 .hp{background:color-mix(in srgb,var(--c-in_review) 20%,transparent)}
+ .col.c-done>h2 .hp{background:color-mix(in srgb,var(--c-done) 18%,transparent)}
+ .themebtn{margin-left:auto;line-height:1}
 </style></head>
 <body>
 <div class="bar"><b>punchcard</b><span class="ver mono" id="ver"></span><span>watch your AI coding agents ship</span><span class="worker" id="worker"></span></div>
@@ -175,6 +199,7 @@
 <div class="tabs">
  <button id="tab-board" class="tab on" onclick="showView('board')">Board</button>
  <button id="tab-mem" class="tab" onclick="showView('mem')">Memory</button>
+ <button id="themebtn" class="tab themebtn" onclick="toggleTheme()" title="Toggle light / dark">&#9680;</button>
 </div>
 <div id="boardview">
 <div class="addrow">
@@ -237,9 +262,9 @@ async function load(){
   const cap=lim[c]||CAP;
   // when a column overflows, show the most-recently-updated first
   const items=(all.length>cap ? all.slice().sort((a,b)=>String(b.updated_at).localeCompare(String(a.updated_at))) : all).slice(0,cap);
-  const col=document.createElement("div"); col.className="col";
+  const col=document.createElement("div"); col.className="col c-"+c;
   col.ondragover=dragOver; col.ondragleave=dragLeave; col.ondrop=e=>dropCard(e,c);
-  let html='<h2><span class="dot dot-'+c+'"></span>'+LABELS[c]+'<span class="ct mono">'+all.length+'</span></h2>';
+  let html='<h2><span class="hp"><span class="dot dot-'+c+'"></span>'+LABELS[c]+'</span><span class="ct mono">'+all.length+'</span></h2>';
   for(const t of items){
    let h='<div class="card s-'+t.status+'" draggable="true" onclick="openCard(\''+esc(t.id)+'\')" ondragstart="dragStart(event,\''+esc(t.id)+'\')" ondragend="dragEnd(event)"><button class="del" onclick="event.stopPropagation();delTask(\''+esc(t.id)+'\')" title="Delete">&times;</button><div class="t">'+esc(t.title)+'</div>';
    const nimg=(t.images||[]).length;
@@ -439,6 +464,9 @@ async function delNote(id){
 document.getElementById('memq').oninput=()=>{ clearTimeout(memTimer); memTimer=setTimeout(loadMemory,250); };
 
 fetch("/api/version").then(r=>r.json()).then(d=>{const e=document.getElementById("ver"); if(e&&d.version) e.textContent=d.version;}).catch(()=>{});
+function applyTheme(t){document.documentElement.dataset.theme=t;localStorage.setItem('punch-theme',t);document.getElementById('themebtn').innerHTML=t==='light'?'&#9681;':'&#9680;';}
+function toggleTheme(){applyTheme(document.documentElement.dataset.theme==='light'?'dark':'light');}
+applyTheme(localStorage.getItem('punch-theme')||'dark');
 loadControl(); load(); setInterval(()=>{ if(!dragging){loadControl();load();} },2000);
 </script>
 </body></html>
