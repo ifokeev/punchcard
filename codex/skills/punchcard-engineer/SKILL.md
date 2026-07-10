@@ -69,17 +69,23 @@ dependents — only a real merge does. Never scan all done tasks.)
    1. `cd <repo> && git fetch origin`, then
       `DEFAULT=$(git remote show origin | sed -n 's/.*HEAD branch: //p')`.
       If `DEFAULT` is empty (no reachable `origin`) → `blocked: cannot derive default branch`.
-   2. **Clean tree only:** if `git diff --quiet && git diff --cached --quiet` does NOT both
-      succeed, the tree has uncommitted work (a human's, or a crashed prior run's) →
-      `blocked: working tree dirty at <repo>`. Never force-discard it.
+   2. **Clean tree only:** if `git status --porcelain` prints ANYTHING, the checkout has
+      uncommitted or untracked work (a human's, or a crashed prior run's) →
+      `blocked: working tree dirty at <repo>`. Never force-discard it. (Ignored files —
+      installed deps, build caches — don't count; `--porcelain` omits them. Use this, not
+      `git diff`, which is blind to untracked files.)
    3. **Physical-repo lock** — stops two in-place runs sharing one checkout even if the board
       keyed them under different path spellings (symlink / relative / case-insensitive FS),
-      which the server can't detect:
+      which the server can't detect. Acquire it now; you release it explicitly in step 9. The
+      lock is a file on disk, so it persists across your separate commands — do **not** use a
+      shell `trap`, which fires the instant your first command's shell exits and would release
+      the lock before you've done any work:
       ```bash
       LOCK="$(git rev-parse --git-dir)/punch-inplace.lock"
       ( set -C; echo $$ >"$LOCK" ) 2>/dev/null || exit 0   # already held → STOP, report blocked: <repo> busy
-      trap 'rm -f "$LOCK"' EXIT                              # release on ANY exit
       ```
+      (If a run is killed before step 9, this lock leaks — a later in-place task blocks with
+      `<repo> busy`; a human clears it with `rm .git/punch-inplace.lock` once no run is active.)
    Only after all three pass, create your branch (`-B` force-resets a stale same-id branch
    from a crashed run, so a retry isn't blocked):
    ```bash
@@ -153,7 +159,8 @@ dependents — only a real merge does. Never scan all done tasks.)
      and build state that are the point of in-place:
      ```bash
      cd <repo>
-     git checkout -f "$DEFAULT"                              # drop this task's uncommitted tracked changes
+     git checkout -f "$DEFAULT"                              # drop this task's uncommitted tracked changes; leaves the checkout on the default branch
+     git clean -fd                                           # remove this task's untracked scratch — keeps ignored deps/build caches (NOT -x)
      git branch -D punch/<id>-<slug> 2>/dev/null || true     # the pushed remote branch + PR persist
      rm -f "$(git rev-parse --git-dir)/punch-inplace.lock"   # release the physical-repo lock
      ```
