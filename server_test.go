@@ -361,3 +361,32 @@ func TestVersionViaAPI(t *testing.T) {
 		t.Fatal("version is empty; want at least the 'dev' default")
 	}
 }
+
+// TestExecModeValidation covers the creation-time guards for the execution-mode fields:
+// worktree requires a repo, in-place (default) without a repo is fine, --base must be a
+// safe ref, and a valid combo is accepted.
+func TestExecModeValidation(t *testing.T) {
+	h := newTestServer(t)
+	post := func(payload any) int {
+		b, _ := json.Marshal(payload)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/tasks", bytes.NewReader(b)))
+		return rec.Code
+	}
+
+	if code := post(map[string]any{"title": "worktree no repo", "worktree": true}); code != http.StatusBadRequest {
+		t.Fatalf("worktree without repo: want 400, got %d", code)
+	}
+	if code := post(map[string]any{"title": "inplace no repo"}); code != http.StatusCreated {
+		t.Fatalf("in-place (default) without repo is valid: want 201, got %d", code)
+	}
+	if code := post(map[string]any{"title": "bad base", "repo": "/r", "base": "origin/x; rm -rf /"}); code != http.StatusBadRequest {
+		t.Fatalf("injection base ref: want 400, got %d", code)
+	}
+	if code := post(map[string]any{"title": "dash base", "repo": "/r", "base": "--upload-pack=evil"}); code != http.StatusBadRequest {
+		t.Fatalf("leading-dash base ref: want 400, got %d", code)
+	}
+	if code := post(map[string]any{"title": "good worktree", "repo": "/r", "worktree": true, "base": "origin/feature-x"}); code != http.StatusCreated {
+		t.Fatalf("valid worktree + base: want 201, got %d", code)
+	}
+}

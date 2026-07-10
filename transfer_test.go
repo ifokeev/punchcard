@@ -104,8 +104,8 @@ func TestImportRejectsMalformedTasks(t *testing.T) {
 	h := newTestServer(t)
 	cases := []map[string]any{
 		{"id": "'-evil()-'", "title": "x", "status": "todo"}, // id with breakout chars
-		{"id": "t_0001", "title": "x", "status": "pwned"},     // bogus status
-		{"id": "", "title": "x", "status": "todo"},            // empty id
+		{"id": "t_0001", "title": "x", "status": "pwned"},    // bogus status
+		{"id": "", "title": "x", "status": "todo"},           // empty id
 	}
 	for i, tk := range cases {
 		bad, _ := json.Marshal(map[string]any{"version": 1, "tasks": []any{tk}})
@@ -129,5 +129,17 @@ func TestImportReplaceFalseDoesNotOverwrite(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/import?replace=false", bytes.NewReader(bundle)))
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("replace=false should not overwrite: want 409, got %d", rec.Code)
+	}
+}
+
+// TestImportRejectsBadBase confirms the import path enforces the same --base injection
+// guard as POST /api/tasks (regression: transfer.go previously stored Base unvalidated).
+func TestImportRejectsBadBase(t *testing.T) {
+	h := newTestServer(t)
+	bundle := `{"version":1,"tasks":[{"id":"t_0001","title":"x","status":"todo","repo":"/r","base":"--upload-pack=evil"}],"notes":[]}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/import?replace=true", bytes.NewReader([]byte(bundle))))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("import with injection base ref: want 400, got %d (%s)", rec.Code, rec.Body)
 	}
 }

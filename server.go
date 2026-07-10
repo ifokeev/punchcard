@@ -12,6 +12,23 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+// validRef reports whether s is a safe git ref to interpolate into the engineer's
+// git command line: non-empty, bounded, no leading '-' (git would read it as a flag),
+// and limited to [A-Za-z0-9._/-]. Blocks shell/argument injection through --base.
+func validRef(s string) bool {
+	if s == "" || len(s) > 200 || s[0] == '-' {
+		return false
+	}
+	for _, r := range s {
+		ok := r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' ||
+			r == '.' || r == '_' || r == '/' || r == '-'
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // newMux wires the API. originBase, when non-empty, overrides the public origin for
 // absolute upload URLs (see upload.go); the board uses relative paths regardless.
 func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *http.ServeMux {
@@ -31,6 +48,8 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 			Priority                             int
 			DependsOn                            []string `json:"depends_on"`
 			Force                                bool     `json:"force"`
+			Worktree                             bool     `json:"worktree"`
+			Base                                 string   `json:"base"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			http.Error(w, "bad json", http.StatusBadRequest)
@@ -38,6 +57,14 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 		}
 		if in.Title == "" {
 			http.Error(w, "title required", http.StatusBadRequest)
+			return
+		}
+		if in.Worktree && in.Repo == "" {
+			http.Error(w, "worktree tasks require a repo", http.StatusBadRequest)
+			return
+		}
+		if in.Base != "" && !validRef(in.Base) {
+			http.Error(w, "invalid base ref", http.StatusBadRequest)
 			return
 		}
 		if !in.Force {
@@ -52,6 +79,7 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 		t, err := s.Create(TaskInput{
 			Title: in.Title, Description: in.Description, Acceptance: in.Acceptance,
 			Repo: in.Repo, Priority: in.Priority, DependsOn: in.DependsOn,
+			Worktree: in.Worktree, Base: in.Base,
 		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

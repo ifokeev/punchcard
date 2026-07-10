@@ -55,6 +55,14 @@ func registerTransferRoutes(mux *http.ServeMux, s *Store, ms *MemoryStore) {
 				http.Error(w, "bundle has an invalid task (id/status)", http.StatusBadRequest)
 				return
 			}
+			if t.Base != "" && !validRef(t.Base) {
+				http.Error(w, "bundle has an invalid task (base ref)", http.StatusBadRequest)
+				return
+			}
+			if t.Worktree && t.Repo == "" {
+				http.Error(w, "bundle has an invalid task (worktree without repo)", http.StatusBadRequest)
+				return
+			}
 		}
 		for _, n := range b.Memory {
 			if n == nil || !validID(n.ID) {

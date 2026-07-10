@@ -147,6 +147,8 @@ func cmdAdd(args []string) {
 	prio := fs.Int("priority", 1, "priority (higher first)")
 	deps := fs.String("depends-on", "", "comma-separated task ids that must be merged before this is claimed")
 	force := fs.Bool("force", false, "add even if a similar active task already exists")
+	worktree := fs.Bool("worktree", false, "run in an isolated git worktree (parallel-safe) instead of the repo's working copy; default runs in place and holds the repo exclusively")
+	base := fs.String("base", "", "git ref to branch from instead of the repo's default branch (e.g. origin/feature-x)")
 	fs.Parse(args)
 	if *title == "" {
 		fail("--title required")
@@ -160,6 +162,7 @@ func cmdAdd(args []string) {
 	code, body, err := doJSON("POST", "/api/tasks", map[string]any{
 		"title": *title, "description": *desc, "acceptance": *acc, "repo": *repo,
 		"priority": *prio, "depends_on": depList, "force": *force,
+		"worktree": *worktree, "base": *base,
 	})
 	if code == http.StatusConflict {
 		fail("a similar active task already exists (re-run with --force to add anyway):\n%s", body)

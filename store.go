@@ -40,6 +40,8 @@ type Task struct {
 	Progress    string    `json:"progress,omitempty"`   // agent-posted current step while in_progress ("running tests")
 	DependsOn   []string  `json:"depends_on,omitempty"` // task ids that must be merged before this can be claimed
 	Merged      bool      `json:"merged,omitempty"`     // this task's PR landed in the default branch
+	Worktree    bool      `json:"worktree,omitempty"`   // run in an isolated git worktree instead of the repo's existing working copy; parallel-safe. Default (unset) runs in place and holds the repo exclusively while in_progress.
+	Base        string    `json:"base,omitempty"`       // git ref to branch from instead of the repo's default branch (advisory metadata; the agent runs git, the binary never does)
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -89,6 +91,8 @@ type TaskInput struct {
 	Repo        string
 	Priority    int
 	DependsOn   []string
+	Worktree    bool
+	Base        string
 }
 
 type Store struct {
@@ -191,7 +195,7 @@ func (s *Store) Claim() (*Task, bool) {
 func (s *Store) claimBest() *Task {
 	var best *Task
 	for _, t := range s.tasks {
-		if t.Status != StatusTodo || !s.depsSatisfied(t) {
+		if t.Status != StatusTodo || !s.depsSatisfied(t) || !s.repoLockOK(t) {
 			continue
 		}
 		if best == nil || better(t, best) {
@@ -204,6 +208,38 @@ func (s *Store) claimBest() *Task {
 	best.Status = StatusInProgress
 	best.UpdatedAt = s.now()
 	return best
+}
+
+// normalizeRepo canonicalizes a repo path for the in-place exclusion check.
+// filepath.Clean only — no symlink/stat resolution (the binary stays filesystem-light),
+// so callers must file a consistent --repo string for the same repo.
+func normalizeRepo(p string) string { return filepath.Clean(p) }
+
+// repoLockOK reports whether t may be claimed under the in-place exclusion rule.
+// In-place (the default, Worktree=false) runs in the repo's shared working copy, so it
+// needs the repo EXCLUSIVELY: it may not be claimed while any other task holds the repo,
+// and no task may be claimed into a repo an in-place task already holds. Worktree tasks
+// (Worktree=true) are isolated, so any number of them run in one repo at once — they only
+// wait on an in-place holder. The lock is derived from live status, so it releases
+// automatically when a task leaves in_progress (done/failed/cancelled/swept/rolled-back)
+// — no lock table to unwind. Caller holds s.mu.
+func (s *Store) repoLockOK(t *Task) bool {
+	if t.Repo == "" {
+		return true // no repo => nothing to isolate, not subject to the repo lock
+	}
+	repo := normalizeRepo(t.Repo)
+	for _, o := range s.tasks {
+		if o.ID == t.ID || o.Status != StatusInProgress || o.Repo == "" {
+			continue
+		}
+		if normalizeRepo(o.Repo) != repo {
+			continue
+		}
+		if !t.Worktree || !o.Worktree { // either side runs in place => exclusive
+			return false
+		}
+	}
+	return true
 }
 
 // depsSatisfied reports whether every task in t.DependsOn exists and has merged.
@@ -411,8 +447,8 @@ func (s *Store) Create(in TaskInput) (*Task, error) {
 	t := &Task{
 		ID: s.nextID(), Title: in.Title, Description: in.Description,
 		Acceptance: in.Acceptance, Repo: in.Repo, Priority: in.Priority,
-		DependsOn: in.DependsOn,
-		Status:    StatusTodo, Artifacts: []string{}, CreatedAt: now, UpdatedAt: now,
+		DependsOn: in.DependsOn, Worktree: in.Worktree, Base: in.Base,
+		Status: StatusTodo, Artifacts: []string{}, CreatedAt: now, UpdatedAt: now,
 	}
 	s.tasks[t.ID] = t
 	if err := s.save(); err != nil {
