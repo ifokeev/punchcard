@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 )
@@ -12,21 +13,15 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
-// validRef reports whether s is a safe git ref to interpolate into the engineer's
-// git command line: non-empty, bounded, no leading '-' (git would read it as a flag),
-// and limited to [A-Za-z0-9._/-]. Blocks shell/argument injection through --base.
-func validRef(s string) bool {
-	if s == "" || len(s) > 200 || s[0] == '-' {
-		return false
+// writeStoreErr maps a store error to a status: a validationError is the caller's fault
+// (400), anything else is a flush/internal failure (500).
+func writeStoreErr(w http.ResponseWriter, err error) {
+	var ve *validationError
+	if errors.As(err, &ve) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
-	for _, r := range s {
-		ok := r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' ||
-			r == '.' || r == '_' || r == '/' || r == '-'
-		if !ok {
-			return false
-		}
-	}
-	return true
+	http.Error(w, err.Error(), http.StatusInternalServerError)
 }
 
 // newMux wires the API. originBase, when non-empty, overrides the public origin for
@@ -59,14 +54,6 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 			http.Error(w, "title required", http.StatusBadRequest)
 			return
 		}
-		if in.Worktree && in.Repo == "" {
-			http.Error(w, "worktree tasks require a repo", http.StatusBadRequest)
-			return
-		}
-		if in.Base != "" && !validRef(in.Base) {
-			http.Error(w, "invalid base ref", http.StatusBadRequest)
-			return
-		}
 		if !in.Force {
 			if dups := s.SimilarActive(in.Title); len(dups) > 0 {
 				writeJSON(w, http.StatusConflict, map[string]any{
@@ -82,7 +69,7 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 			Worktree: in.Worktree, Base: in.Base,
 		})
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeStoreErr(w, err)
 			return
 		}
 		writeJSON(w, http.StatusCreated, t)

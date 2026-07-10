@@ -50,17 +50,12 @@ func registerTransferRoutes(mux *http.ServeMux, s *Store, ms *MemoryStore) {
 		// Validate BEFORE touching the board: ids and statuses here are
 		// caller-controlled and get rendered/bucketed by the UI, so reject anything
 		// malformed rather than store it verbatim.
+		// id/status are import-only (settable nowhere else) and get rendered/bucketed by
+		// the UI, so validate them here. The execution-mode invariants (worktree needs a
+		// repo, safe base ref) are enforced centrally by s.Replace below.
 		for _, t := range b.Tasks {
 			if t == nil || !validID(t.ID) || !validStatus(t.Status) {
 				http.Error(w, "bundle has an invalid task (id/status)", http.StatusBadRequest)
-				return
-			}
-			if t.Base != "" && !validRef(t.Base) {
-				http.Error(w, "bundle has an invalid task (base ref)", http.StatusBadRequest)
-				return
-			}
-			if t.Worktree && t.Repo == "" {
-				http.Error(w, "bundle has an invalid task (worktree without repo)", http.StatusBadRequest)
 				return
 			}
 		}
@@ -77,7 +72,7 @@ func registerTransferRoutes(mux *http.ServeMux, s *Store, ms *MemoryStore) {
 		}
 		oldTasks := s.List() // snapshot for best-effort rollback if the memory swap fails
 		if err := s.Replace(b.Tasks); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeStoreErr(w, err) // 400 on a malformed bundle (validationError), 500 on flush failure
 			return
 		}
 		if err := ms.Replace(b.Memory); err != nil {

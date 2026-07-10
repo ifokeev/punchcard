@@ -72,6 +72,42 @@ func validID(s string) bool {
 	return true
 }
 
+// validRef reports whether s is a safe git ref to interpolate into the engineer's
+// git command line: non-empty, bounded, no leading '-' (git would read it as a flag),
+// and limited to [A-Za-z0-9._/-]. Blocks shell/argument injection through --base.
+func validRef(s string) bool {
+	if s == "" || len(s) > 200 || s[0] == '-' {
+		return false
+	}
+	for _, r := range s {
+		ok := r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' ||
+			r == '.' || r == '_' || r == '/' || r == '-'
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// validationError marks input the store rejects as malformed; HTTP handlers map it to 400
+// (via errors.As) rather than the default 500. See validateExecMode.
+type validationError struct{ msg string }
+
+func (e *validationError) Error() string { return e.msg }
+
+// validateExecMode enforces the execution-mode invariants EVERY write path shares, so no
+// caller can forge a task that skips them: a worktree task needs a repo, and a non-empty
+// base must be a safe git ref. Called by Create and Replace — do not re-check in handlers.
+func validateExecMode(repo, base string, worktree bool) error {
+	if worktree && repo == "" {
+		return &validationError{"worktree tasks require a repo"}
+	}
+	if base != "" && !validRef(base) {
+		return &validationError{"invalid base ref"}
+	}
+	return nil
+}
+
 // activeStatuses are the non-terminal statuses a duplicate check considers — a
 // task that's done/merged/cancelled/failed is closed, so re-filing it is fine.
 var activeStatuses = map[Status]bool{
@@ -193,9 +229,10 @@ func (s *Store) Claim() (*Task, bool) {
 // it (nil if none). A task is claimable only when every task it depends on has
 // merged. Caller holds s.mu and is responsible for save().
 func (s *Store) claimBest() *Task {
+	occ := s.repoOccupancy() // once per call: O(1) lock check per candidate below
 	var best *Task
 	for _, t := range s.tasks {
-		if t.Status != StatusTodo || !s.depsSatisfied(t) || !s.repoLockOK(t) {
+		if t.Status != StatusTodo || !s.depsSatisfied(t) || !repoLockOK(t, occ) {
 			continue
 		}
 		if best == nil || better(t, best) {
@@ -215,31 +252,47 @@ func (s *Store) claimBest() *Task {
 // so callers must file a consistent --repo string for the same repo.
 func normalizeRepo(p string) string { return filepath.Clean(p) }
 
-// repoLockOK reports whether t may be claimed under the in-place exclusion rule.
-// In-place (the default, Worktree=false) runs in the repo's shared working copy, so it
-// needs the repo EXCLUSIVELY: it may not be claimed while any other task holds the repo,
-// and no task may be claimed into a repo an in-place task already holds. Worktree tasks
-// (Worktree=true) are isolated, so any number of them run in one repo at once — they only
-// wait on an in-place holder. The lock is derived from live status, so it releases
-// automatically when a task leaves in_progress (done/failed/cancelled/swept/rolled-back)
-// — no lock table to unwind. Caller holds s.mu.
-func (s *Store) repoLockOK(t *Task) bool {
+// repoOcc summarizes how in_progress tasks hold one repo.
+type repoOcc struct {
+	anyInProgress bool // some task is running in this repo
+	inPlaceHolder bool // an in-place (non-worktree) task is running in this repo
+}
+
+// repoOccupancy builds the per-normalized-repo occupancy of in_progress tasks ONCE, so the
+// per-candidate lock check in claimBest is O(1) instead of an O(n) rescan (which made
+// claimBest O(n²) and ClaimBatch O(slots·n²)). Caller holds s.mu.
+func (s *Store) repoOccupancy() map[string]repoOcc {
+	m := map[string]repoOcc{}
+	for _, t := range s.tasks {
+		if t.Status != StatusInProgress || t.Repo == "" {
+			continue
+		}
+		k := normalizeRepo(t.Repo)
+		o := m[k]
+		o.anyInProgress = true
+		if !t.Worktree {
+			o.inPlaceHolder = true
+		}
+		m[k] = o
+	}
+	return m
+}
+
+// repoLockOK reports whether t may be claimed given the current repo occupancy.
+// In-place (the default, Worktree=false) runs in the repo's shared working copy, so it needs
+// the repo EXCLUSIVELY — claimable only if nothing else is running there. Worktree tasks
+// (Worktree=true) are isolated, so any number run in one repo at once; they only wait on an
+// in-place holder. Occupancy is derived from live status, so a lock releases automatically
+// when a task leaves in_progress (done/failed/cancelled/swept/rolled-back).
+func repoLockOK(t *Task, occ map[string]repoOcc) bool {
 	if t.Repo == "" {
 		return true // no repo => nothing to isolate, not subject to the repo lock
 	}
-	repo := normalizeRepo(t.Repo)
-	for _, o := range s.tasks {
-		if o.ID == t.ID || o.Status != StatusInProgress || o.Repo == "" {
-			continue
-		}
-		if normalizeRepo(o.Repo) != repo {
-			continue
-		}
-		if !t.Worktree || !o.Worktree { // either side runs in place => exclusive
-			return false
-		}
+	o := occ[normalizeRepo(t.Repo)]
+	if t.Worktree {
+		return !o.inPlaceHolder
 	}
-	return true
+	return !o.anyInProgress
 }
 
 // depsSatisfied reports whether every task in t.DependsOn exists and has merged.
@@ -441,6 +494,9 @@ func (s *Store) SimilarActive(title string) []*Task {
 }
 
 func (s *Store) Create(in TaskInput) (*Task, error) {
+	if err := validateExecMode(in.Repo, in.Base, in.Worktree); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
@@ -468,6 +524,14 @@ func (s *Store) Empty() bool {
 // Replace swaps the entire task set for the given tasks and persists atomically.
 // Malformed entries (nil or missing id) are skipped. Used by import.
 func (s *Store) Replace(tasks []*Task) error {
+	for _, t := range tasks { // validate before mutating so a bad bundle changes nothing
+		if t == nil {
+			continue
+		}
+		if err := validateExecMode(t.Repo, t.Base, t.Worktree); err != nil {
+			return err
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	old := s.tasks

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -465,5 +466,25 @@ func TestRepoLockEmptyRepoNoCollision(t *testing.T) {
 	}
 	if !got[dot.ID] {
 		t.Fatalf("in-place task with repo \".\" must not be blocked by an empty-repo task")
+	}
+}
+
+// TestCreateValidatesExecMode locks in that exec-mode validation lives in the store (not
+// just the HTTP handler), so no write path can forge a task that skips it.
+func TestCreateValidatesExecMode(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	var ve *validationError
+	if _, err := s.Create(TaskInput{Title: "x", Worktree: true}); !errors.As(err, &ve) {
+		t.Fatalf("worktree without repo: want validationError, got %v", err)
+	}
+	if _, err := s.Create(TaskInput{Title: "x", Repo: "/r", Base: "--evil"}); !errors.As(err, &ve) {
+		t.Fatalf("unsafe base ref: want validationError, got %v", err)
+	}
+	if _, err := s.Create(TaskInput{Title: "x", Repo: "/r", Base: "origin/ok"}); err != nil {
+		t.Fatalf("valid task rejected: %v", err)
+	}
+	// Replace enforces the same invariant on every task in a bundle.
+	if err := s.Replace([]*Task{{ID: "t_1", Base: "bad;ref"}}); !errors.As(err, &ve) {
+		t.Fatalf("Replace with bad base: want validationError, got %v", err)
 	}
 }
