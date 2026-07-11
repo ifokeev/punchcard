@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 )
@@ -10,6 +11,17 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(v)
+}
+
+// writeStoreErr maps a store error to a status: a validationError is the caller's fault
+// (400), anything else is a flush/internal failure (500).
+func writeStoreErr(w http.ResponseWriter, err error) {
+	var ve *validationError
+	if errors.As(err, &ve) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Error(w, err.Error(), http.StatusInternalServerError)
 }
 
 // newMux wires the API. originBase, when non-empty, overrides the public origin for
@@ -31,6 +43,8 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 			Priority                             int
 			DependsOn                            []string `json:"depends_on"`
 			Force                                bool     `json:"force"`
+			Worktree                             bool     `json:"worktree"`
+			Base                                 string   `json:"base"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			http.Error(w, "bad json", http.StatusBadRequest)
@@ -52,9 +66,10 @@ func newMux(s *Store, ms *MemoryStore, cs *ControlStore, originBase string) *htt
 		t, err := s.Create(TaskInput{
 			Title: in.Title, Description: in.Description, Acceptance: in.Acceptance,
 			Repo: in.Repo, Priority: in.Priority, DependsOn: in.DependsOn,
+			Worktree: in.Worktree, Base: in.Base,
 		})
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeStoreErr(w, err)
 			return
 		}
 		writeJSON(w, http.StatusCreated, t)

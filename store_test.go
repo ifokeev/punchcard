@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -178,14 +179,14 @@ func TestPendingMerges(t *testing.T) {
 	pr := "http://pr"
 	mg := true
 
-	a, _ := s.Create(TaskInput{Title: "A"})                     // blocks B; will be done+unmerged → pending
-	s.Create(TaskInput{Title: "B", DependsOn: []string{a.ID}})  // todo, waits on A
-	c, _ := s.Create(TaskInput{Title: "C"})                     // done+unmerged but nothing depends on it
-	d, _ := s.Create(TaskInput{Title: "D"})                     // blocks E; already merged → not pending
-	s.Create(TaskInput{Title: "E", DependsOn: []string{d.ID}})  // todo, waits on D
+	a, _ := s.Create(TaskInput{Title: "A"})                    // blocks B; will be done+unmerged → pending
+	s.Create(TaskInput{Title: "B", DependsOn: []string{a.ID}}) // todo, waits on A
+	c, _ := s.Create(TaskInput{Title: "C"})                    // done+unmerged but nothing depends on it
+	d, _ := s.Create(TaskInput{Title: "D"})                    // blocks E; already merged → not pending
+	s.Create(TaskInput{Title: "E", DependsOn: []string{d.ID}}) // todo, waits on D
 
-	s.Patch(a.ID, Patch{Status: &done, PRURL: &pr})            // A: done, PR, unmerged, blocks B
-	s.Patch(c.ID, Patch{Status: &done, PRURL: &pr})            // C: done but unreferenced
+	s.Patch(a.ID, Patch{Status: &done, PRURL: &pr})              // A: done, PR, unmerged, blocks B
+	s.Patch(c.ID, Patch{Status: &done, PRURL: &pr})              // C: done but unreferenced
 	s.Patch(d.ID, Patch{Status: &done, PRURL: &pr, Merged: &mg}) // D: already merged
 
 	pend := s.PendingMerges()
@@ -321,7 +322,7 @@ func TestReplaceAndEmpty(t *testing.T) {
 	if err := s.Replace([]*Task{
 		{ID: "t_0001", Title: "A", Status: StatusDone, Merged: true},
 		{ID: "t_0002", Title: "B", Status: StatusTodo, DependsOn: []string{"t_0001"}},
-		nil,            // skipped
+		nil,             // skipped
 		{Title: "noid"}, // skipped
 	}); err != nil {
 		t.Fatalf("Replace: %v", err)
@@ -381,5 +382,109 @@ func TestPatchProgressClearsWhenNotInProgress(t *testing.T) {
 	}
 	if got.Progress != "" {
 		t.Fatalf("progress = %q, want cleared", got.Progress)
+	}
+}
+
+// TestInPlaceRepoLock verifies the exclusive per-repo lock: an in-place task holds its
+// repo alone (blocks same-repo worktree tasks), other repos are unaffected, a worktree
+// task does not block another worktree task in the same repo, and the lock releases when
+// the holder leaves in_progress.
+func TestInPlaceRepoLock(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.now = fixedClock()
+	a, _ := s.Create(TaskInput{Title: "inplace r1", Repo: "/r1", Priority: 9}) // in-place (default)
+	b, _ := s.Create(TaskInput{Title: "worktree r1", Repo: "/r1", Priority: 5, Worktree: true})
+	c, _ := s.Create(TaskInput{Title: "worktree r2", Repo: "/r2", Priority: 1, Worktree: true})
+
+	claimed := func() map[string]bool {
+		m := map[string]bool{}
+		for _, tk := range s.ClaimBatch(99, 99) {
+			m[tk.ID] = true
+		}
+		return m
+	}
+
+	got := claimed()
+	if !got[a.ID] || !got[c.ID] {
+		t.Fatalf("want in-place A and other-repo C claimed, got %v", got)
+	}
+	if got[b.ID] {
+		t.Fatalf("worktree B (same repo as in-place A) must not be claimed while A holds /r1")
+	}
+
+	// A frees -> B (same repo) becomes claimable.
+	done := StatusDone
+	if _, err := s.Patch(a.ID, Patch{Status: &done}); err != nil {
+		t.Fatal(err)
+	}
+	if got := claimed(); !got[b.ID] {
+		t.Fatalf("B should be claimable once in-place A left in_progress; got %v", got)
+	}
+}
+
+// TestWorktreeSameRepoParallel confirms two worktree tasks in one repo can run at once
+// (worktree tasks only exclude when an in-place task holds the repo).
+func TestWorktreeSameRepoParallel(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.now = fixedClock()
+	s.Create(TaskInput{Title: "wt1", Repo: "/r", Priority: 2, Worktree: true})
+	s.Create(TaskInput{Title: "wt2", Repo: "/r", Priority: 1, Worktree: true})
+	if got := s.ClaimBatch(99, 99); len(got) != 2 {
+		t.Fatalf("want both worktree tasks in the same repo claimed, got %d", len(got))
+	}
+}
+
+// TestWorktreeHolderBlocksInPlace confirms an in-place task waits while any task (here a
+// worktree task) is in_progress in its repo.
+func TestWorktreeHolderBlocksInPlace(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.now = fixedClock()
+	wt, _ := s.Create(TaskInput{Title: "wt", Repo: "/r", Priority: 9, Worktree: true})
+	ip, _ := s.Create(TaskInput{Title: "inplace", Repo: "/r", Priority: 1}) // in-place (default)
+	got := map[string]bool{}
+	for _, tk := range s.ClaimBatch(99, 99) {
+		got[tk.ID] = true
+	}
+	if !got[wt.ID] {
+		t.Fatalf("worktree task should be claimed")
+	}
+	if got[ip.ID] {
+		t.Fatalf("in-place task must not be claimed while a worktree task holds the repo")
+	}
+}
+
+// TestRepoLockEmptyRepoNoCollision guards the normalizeRepo("")=="." alias: a task with a
+// literal "." repo must not be blocked by (or block) tasks that have no repo set.
+func TestRepoLockEmptyRepoNoCollision(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	s.now = fixedClock()
+	s.Create(TaskInput{Title: "no repo running", Priority: 9})                        // Repo == ""
+	dot, _ := s.Create(TaskInput{Title: "dot repo in-place", Repo: ".", Priority: 1}) // in-place (default)
+	got := map[string]bool{}
+	for _, tk := range s.ClaimBatch(99, 99) {
+		got[tk.ID] = true
+	}
+	if !got[dot.ID] {
+		t.Fatalf("in-place task with repo \".\" must not be blocked by an empty-repo task")
+	}
+}
+
+// TestCreateValidatesExecMode locks in that exec-mode validation lives in the store (not
+// just the HTTP handler), so no write path can forge a task that skips it.
+func TestCreateValidatesExecMode(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "tasks.json"))
+	var ve *validationError
+	if _, err := s.Create(TaskInput{Title: "x", Worktree: true}); !errors.As(err, &ve) {
+		t.Fatalf("worktree without repo: want validationError, got %v", err)
+	}
+	if _, err := s.Create(TaskInput{Title: "x", Repo: "/r", Base: "--evil"}); !errors.As(err, &ve) {
+		t.Fatalf("unsafe base ref: want validationError, got %v", err)
+	}
+	if _, err := s.Create(TaskInput{Title: "x", Repo: "/r", Base: "origin/ok"}); err != nil {
+		t.Fatalf("valid task rejected: %v", err)
+	}
+	// Replace enforces the same invariant on every task in a bundle.
+	if err := s.Replace([]*Task{{ID: "t_1", Base: "bad;ref"}}); !errors.As(err, &ve) {
+		t.Fatalf("Replace with bad base: want validationError, got %v", err)
 	}
 }

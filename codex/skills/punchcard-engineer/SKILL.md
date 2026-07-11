@@ -57,25 +57,60 @@ dependents — only a real merge does. Never scan all done tasks.)
    and returns ONE line: `id | branch | pr_url | proof_url | outcome`. **Wait for the
    whole batch to return before step 1 again.**
 
-3. **(subagent) Isolate in a git worktree** — NEVER work in the shared/main working
-   tree: it may be dirty or in use by another agent, and committing there sweeps in
-   unrelated changes. Branch off a clean, up-to-date default branch:
+3. **(subagent) Get your checkout** — in place by default, or an isolated worktree if the
+   task sets `worktree`. Check `worktree` and `base` (`punch get <id>`); a task with no
+   `repo` is a non-git task — just work wherever and skip to step 4.
+
+   **In-place (default — `worktree` is false):** work in the repo's EXISTING checkout so its
+   already-installed dependencies and build state are reused. The checkout is shared, so run
+   these gates **in order**, and at any gate that fails **STOP immediately — create no
+   branch, edit nothing, and return `outcome=blocked: <reason>`** (never discard someone's
+   uncommitted work; don't rely on a bash `return`, just stop and report):
+   1. `cd <repo> && git fetch origin`, then
+      `DEFAULT=$(git remote show origin | sed -n 's/.*HEAD branch: //p')`.
+      If `DEFAULT` is empty (no reachable `origin`) → `blocked: cannot derive default branch`.
+   2. **Clean tree only:** if `git status --porcelain` prints ANYTHING, the checkout has
+      uncommitted or untracked work (a human's, or a crashed prior run's) →
+      `blocked: working tree dirty at <repo>`. Never force-discard it. (Ignored files —
+      installed deps, build caches — don't count; `--porcelain` omits them. Use this, not
+      `git diff`, which is blind to untracked files.)
+   3. **Physical-repo lock** — stops two in-place runs sharing one checkout even if the board
+      keyed them under different path spellings (symlink / relative / case-insensitive FS),
+      which the server can't detect. Acquire it now; you release it explicitly in step 9. The
+      lock is a file on disk, so it persists across your separate commands — do **not** use a
+      shell `trap`, which fires the instant your first command's shell exits and would release
+      the lock before you've done any work:
+      ```bash
+      LOCK="$(git rev-parse --git-dir)/punch-inplace.lock"
+      ( set -C; echo $$ >"$LOCK" ) 2>/dev/null || exit 0   # already held → STOP, report blocked: <repo> busy
+      ```
+      (If a run is killed before step 9, this lock leaks — a later in-place task blocks with
+      `<repo> busy`; a human clears it with `rm .git/punch-inplace.lock` once no run is active.)
+   Only after all three pass, create your branch (`-B` force-resets a stale same-id branch
+   from a crashed run, so a retry isn't blocked):
+   ```bash
+   git checkout -B punch/<id>-<slug> "${base:-origin/$DEFAULT}"
+   ```
+
+   **Worktree (`worktree` is true):** parallel-safe isolation — branch a throwaway worktree
+   off a clean base and work there, leaving the main checkout untouched:
    ```bash
    git -C <repo> fetch origin
    DEFAULT=$(git -C <repo> remote show origin | sed -n 's/.*HEAD branch: //p')
    WT="$(mktemp -d)/punch-<id>"
-   git -C <repo> worktree add "$WT" -b punch/<id>-<slug> "origin/$DEFAULT"
+   git -C <repo> worktree add "$WT" -b punch/<id>-<slug> "${base:-origin/$DEFAULT}"
    cd "$WT"
    ```
-   Your branch now contains ONLY this task's changes, isolated from every other agent.
-   Then recall context: `punch memory search "<topic/keywords>" --repo <repo>`.
+
+   Either way your branch now contains ONLY this task's changes. Then recall context:
+   `punch memory search "<topic/keywords>" --repo <repo>`.
 
    **Cancellation checkpoints:** the board can cancel a running task. At each checkpoint
    — right after claiming, and before committing, pushing, and attaching — run
    `punch get <id>` and check `.status`. If it is no longer `in_progress` (it's
-   `cancelled`, or was swept to `failed`), **abort immediately**: stop work, remove your
-   worktree (step 9), and return outcome=`cancelled`. Do not push or open a PR for a
-   cancelled task. (Codex has no Claude-style pre-tool kill-switch hook, so this
+   `cancelled`, or was swept to `failed`), **abort immediately**: stop work, run the
+   step-9 cleanup for your mode, and return outcome=`cancelled`. Do not push or open a PR
+   for a cancelled task. (Codex has no Claude-style pre-tool kill-switch hook, so this
    cooperative check IS the stop mechanism — do it faithfully.)
 
    **Progress (so the board shows the run live):** as you move through the steps, post a
@@ -89,7 +124,7 @@ dependents — only a real merge does. Never scan all done tasks.)
    **read each path** before implementing. They're the mockups/screenshots of what to
    build; treat them as part of the spec.
 
-4. **(subagent) Implement** in the worktree to satisfy `acceptance`. Run the repo's
+4. **(subagent) Implement** in your checkout to satisfy `acceptance`. Run the repo's
    tests. Commit with **Conventional Commits** (`feat:`, `fix:`, `refactor:`, `docs:`,
    `test:`, `chore:` …) — one focused commit per logical change.
 
@@ -117,10 +152,22 @@ dependents — only a real merge does. Never scan all done tasks.)
    - **Non-web / no browser tool:** attach a screenshot, a terminal capture, or the
      passing-test output. Never skip the proof step.
 
-9. **(subagent) Clean up + return:** `cd <repo> && git worktree remove --force "$WT"`
-   (the branch + PR stay on the remote). Return the one-line summary. On ANY failure in
-   3–8, still remove the worktree and return `failed:`/`blocked: <reason>` (keep the PR
-   URL if one exists).
+9. **(subagent) Clean up + return** — mode-dependent, on EVERY exit path (success, failure,
+   blocked, cancelled):
+   - **In-place (default):** return the shared checkout to a clean default state WITHOUT
+     wiping ignored files — **never `git clean -x`**, that deletes the installed dependencies
+     and build state that are the point of in-place:
+     ```bash
+     cd <repo>
+     git checkout -f "$DEFAULT"                              # drop this task's uncommitted tracked changes; leaves the checkout on the default branch
+     git clean -fd                                           # remove this task's untracked scratch — keeps ignored deps/build caches (NOT -x)
+     git branch -D punch/<id>-<slug> 2>/dev/null || true     # the pushed remote branch + PR persist
+     rm -f "$(git rev-parse --git-dir)/punch-inplace.lock"   # release the physical-repo lock
+     ```
+   - **Worktree:** `cd <repo> && git worktree remove --force "$WT"` (the branch + PR stay
+     on the remote).
+   Return the one-line summary (keep the PR URL if one exists). The server's per-repo claim
+   gate releases automatically when the loop records the task's status in step 10.
 
 10. **(loop) Record state** from each subagent's summary (one per task in the batch):
     - mergeable success → `punch update <id> --pr <pr_url> --branch <branch> --status done`

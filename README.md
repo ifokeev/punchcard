@@ -143,6 +143,28 @@ it until that dependency's PR is **actually merged** — not just marked done. E
 loop reconciles real merge state with `gh` and flips merged dependencies, which unblocks
 the dependents. So you can file a whole chain up front and let it land in order.
 
+## Execution mode
+A task runs **in place** in your repo's checkout by default — reusing whatever's already
+installed and built there — and holds that repo to itself, so same-repo tasks run one at a
+time. Want several agents on one repo at once? Add **`--worktree`** and each gets its own
+throwaway git worktree instead:
+```bash
+punch add --title "Fix the footer link"  --repo ~/app                     # in place (default)
+punch add --title "Big refactor"          --repo ~/app --worktree         # isolated, parallel-safe
+punch add --title "Pick up the WIP work"  --repo ~/app --base origin/feat-x
+```
+
+| | In place *(default)* | `--worktree` |
+|---|---|---|
+| Speed | fast — reuses installed deps | slower — fresh checkout each time |
+| Parallelism | one task per repo at a time | many per repo at once |
+| Touches | your working checkout | a temp worktree only |
+
+In place is for agent-owned checkouts: a dirty tree makes the task **blocked**, never
+clobbered (file same-repo tasks with one canonical `--repo` path — the lock keys on it, with
+a worker-side `.git` lockfile backstopping aliased paths). `--base <ref>` branches from any
+ref, in either mode.
+
 ## Make it remote (pick one)
 | Tier | How |
 |---|---|

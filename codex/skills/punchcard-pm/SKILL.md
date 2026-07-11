@@ -38,6 +38,15 @@ produce a brief with ALL of:
   task that needs a schema migration merged first). The Engineer loop won't claim a task
   until every dependency's PR has actually merged — so don't use it for tasks that are
   merely related but independent.
+- **worktree** (optional, `--worktree`) — by default a task runs **in place** in the repo's
+  existing checkout (reusing its installed dependencies and build state), which holds the
+  repo **exclusively** — the loop won't run another task for that repo at the same time, so
+  same-repo tasks **serialize**. Pass `--worktree` to run in an isolated git worktree
+  instead: parallel-safe (multiple can run in one repo at once) at the cost of a fresh
+  checkout. Reach for it when you want same-repo throughput; requires `--repo`. File in-place
+  tasks with a single canonical `--repo` path (the exclusion keys on that string).
+- **base** (optional, `--base <ref>`) — branch the task from a specific git ref (e.g.
+  `origin/feature-x`, a tag, a sha) instead of the default branch. Works in either mode.
 
 A brief is good only if it stands alone. The Engineer runs each task in a fresh
 context — anything not in the brief or memory is invisible to it.

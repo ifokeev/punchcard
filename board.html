@@ -71,6 +71,8 @@
  input::placeholder,textarea::placeholder{color:var(--faint)}
  input:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(94,106,210,.25)}
  textarea{resize:vertical;min-height:40px}
+ .details label.chk{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--mut);cursor:pointer}
+ .details label.chk input{width:auto;margin:0;box-shadow:none}
  .qa{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:stretch}
  .prio{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface-1)}
  .prio span{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);padding:0 12px;white-space:nowrap}
@@ -182,6 +184,7 @@
  .imgadd:hover{background:var(--surface-2);border-color:var(--line-strong)}
  .refadd .hint{font-size:12px;color:var(--faint)}
  .card .m .imgc{display:inline-flex;align-items:center;gap:3px;color:var(--mut)}
+ .card .m .ipl{font-size:10px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--c-in_progress);border:1px solid color-mix(in srgb,var(--c-in_progress) 40%,transparent);border-radius:5px;padding:0 5px;line-height:15px}
  /* Multica-style column color: faint body wash + tinted header pill on the active states */
  .col.c-in_progress{background:color-mix(in srgb,var(--c-in_progress) 6%,transparent);border-radius:12px}
  .col.c-in_review{background:color-mix(in srgb,var(--c-in_review) 6%,transparent);border-radius:12px}
@@ -221,6 +224,8 @@
   <textarea name="description" placeholder="description / brief" rows="2"></textarea>
   <textarea name="acceptance" placeholder="acceptance criteria" rows="2"></textarea>
   <input name="repo" placeholder="repo (local path)">
+  <input name="base" placeholder="base ref — optional, e.g. origin/feature-x">
+  <label class="chk"><input type="checkbox" name="worktree"> isolated worktree — parallel-safe (default runs in place; needs a repo)</label>
  </div>
 </form>
 <div class="cols" id="board"></div>
@@ -268,7 +273,7 @@ async function load(){
   for(const t of items){
    let h='<div class="card s-'+t.status+'" draggable="true" onclick="openCard(\''+esc(t.id)+'\')" ondragstart="dragStart(event,\''+esc(t.id)+'\')" ondragend="dragEnd(event)"><button class="del" onclick="event.stopPropagation();delTask(\''+esc(t.id)+'\')" title="Delete">&times;</button><div class="t">'+esc(t.title)+'</div>';
    const nimg=(t.images||[]).length;
-   h+='<div class="m">'+priIcon(t.priority||0)+'<span class="mono">'+esc(t.id)+'</span>'+(nimg?'<span class="imgc" title="'+nimg+' reference image(s)"><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="5.5" cy="6" r="1.2" fill="currentColor"/><path d="M2 12l3.5-3.5 2.5 2.5 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>'+nimg+'</span>':'')+'</div>';
+   h+='<div class="m">'+priIcon(t.priority||0)+'<span class="mono">'+esc(t.id)+'</span>'+(nimg?'<span class="imgc" title="'+nimg+' reference image(s)"><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="5.5" cy="6" r="1.2" fill="currentColor"/><path d="M2 12l3.5-3.5 2.5 2.5 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>'+nimg+'</span>':'')+(t.worktree?'<span class="ipl" title="runs in an isolated worktree">worktree</span>':'')+(t.base?'<span class="ipl" title="branches from '+esc(t.base)+' instead of the default branch">'+esc(t.base)+'</span>':'')+'</div>';
    const unmet=(t.depends_on||[]).filter(id=>!(tasksById[id]&&tasksById[id].merged));
    if(t.status==='todo'&&unmet.length) h+='<div class="dep">waiting on '+unmet.map(esc).join(', ')+'</div>';
    if(t.merged) h+='<div class="merged">&#10003; merged</div>';
@@ -298,6 +303,7 @@ document.getElementById("f").onsubmit=async e=>{
  e.preventDefault();
  const fd=new FormData(e.target), body={};
  fd.forEach((v,k)=>body[k]=k==="priority"?Number(v):v);
+ body.worktree=e.target.worktree.checked; // checkbox -> real bool (FormData omits it / sends "on")
  let res=await fetch("/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
  if(res.status===409){
   const d=await res.json().catch(()=>({}));
