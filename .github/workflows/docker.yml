@@ -11,6 +11,10 @@ permissions:
   contents: read
   packages: write
 
+env:
+  # Skip Docker auto-uploaded .dockerbuild build-record artifacts (unused; fill Actions storage).
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+
 jobs:
   image:
     runs-on: ubuntu-latest
